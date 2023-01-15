@@ -22,6 +22,8 @@ pacman::p_load(pushoverr,
                httr,
                ggplot2,
                suncalc,
+               glue,
+               hms,
                data.table)
 
 ```
@@ -224,6 +226,41 @@ todays_forecast
 ```
 
 
+```{r}
+
+## First get DT and score
+
+df.scores = res_json_hourly %>% 
+  filter(!hour(dt) %in% c(23,seq(0,6) )) %>% 
+  arrange(dt) %>% 
+  dplyr::mutate(dt=factor(format(dt,"%A %H:%M"),levels=format(dt,"%A %H:%M")),
+                pop=pop*100)
+# %>% 
+  # dplyr::mutate(rain=.$rain$`1h`)
+
+# df.scores$rain[is.na(df.scores$rain)] <- 0
+
+df.scores = df.scores %>% 
+  # dplyr::mutate(rain_score=rescale_capped(rain,from = c(10,0))) %>% 
+  dplyr::mutate(temp_score=rescale_capped(temp,from = c(0,25))) %>% 
+  dplyr::mutate(feels_like_score=rescale_capped(feels_like,from = c(0,25))) %>% 
+  dplyr::mutate(humidity_score=rescale_capped(humidity,from = c(100,0))) %>% 
+  dplyr::mutate(uvi_score=rescale_capped(uvi,from = c(0,6))) %>% 
+  dplyr::mutate(clouds_score=rescale_capped(clouds,from = c(100,0))) %>% 
+  dplyr::mutate(wind_speed_score=rescale_capped(wind_speed,from = c(10,0))) %>% 
+  dplyr::mutate(wind_gust_score=rescale_capped(wind_gust,from = c(10,0))) %>% 
+  dplyr::mutate(pop_score=rescale_capped(pop,from = c(100,0))) 
+
+
+
+```
+
+```{r }
+
+factors = c("temp","uvi","clouds","pop")
+draw_scorecard(factors)
+
+```
 
 # SunCalc
 
@@ -236,7 +273,7 @@ dates_in_thisyear = seq.Date(from = floor_date(Sys.Date(),unit = "year"),to = ce
 
 ```{r}
 seq_next_14 = 
-  seq.Date(Sys.Date(),Sys.Date()+days(14),by = "1 day")
+  seq.Date(Sys.Date()-days(1),Sys.Date()+days(14),by = "1 day")
 
 event_order = c("dawn", 
                 "sunrise", 
@@ -259,14 +296,16 @@ event_order.labels = c("Dawn",
                 "Dusk", 
                 "Night")
 ### Next Week
-# df.dates.next_week =
-p_comingweek = suncalc::getSunlightTimes(date = seq_next_14,
-                            lat = lat,
-                            lon = lon,
+df.dates.next_week = suncalc::getSunlightTimes(date = seq_next_14,
+                            lat = 55.7715024,
+                            lon = 12.4932282,
                             tz = "CET",
                             keep = event_order) %>% 
   gather(EventName,EventTime,dawn:night) %>% 
-  dplyr::mutate(EventName=factor(EventName,levels=event_order,labels=event_order.labels)) %>% 
+  dplyr::mutate(EventName=factor(EventName,levels=event_order,labels=event_order.labels))
+
+df.dates.next_week %>% 
+  filter(date>=Sys.Date()) %>% 
   ggplot(.,aes(y=date,x=EventName)) +
   geom_tile(aes(group=EventTime,fill=EventTime),color="white") +
   geom_text(aes(label=strftime(EventTime,format = "%H:%M:%S")),color="white",size=3) +
@@ -276,11 +315,43 @@ p_comingweek = suncalc::getSunlightTimes(date = seq_next_14,
   labs(x=NULL,y=NULL) +
   scale_y_date(date_breaks = "1 day",date_labels = "%A %d %b")
 
-p_comingweek
-
 # Next Month
 ```
 
+```{r}
+
+# Pushover
+sunrise = df.dates.next_week %>% filter(EventName=="Sunrise",EventTime>=Sys.Date()) %>% filter(min(EventTime)==EventTime) %>% pull(EventTime) %>% format.Date(.,"%H:%M:%S")
+sunset = df.dates.next_week %>% filter(EventName=="Sunset",EventTime>=Sys.Date()) %>% filter(min(EventTime)==EventTime) %>% pull(EventTime) %>% format.Date(.,"%H:%M:%S")
+gain_sunrise = df.dates.next_week %>% 
+  filter(EventName=="Sunrise") %>% 
+  dplyr::mutate(change=-1*(difftime(EventTime,lag((EventTime+hours(24))),units = "secs"))) %>% 
+  dplyr::mutate(change=as.numeric(change)) %>% 
+  dplyr::mutate(change=sprintf("+%02d:%02d", change %% 3600 %/% 60,  change %% 60 %/% 1)) %>% 
+  filter(EventTime>=Sys.Date()) %>% 
+  filter(min(EventTime)==EventTime) %>% 
+  pull(change)
+gain_sunset = df.dates.next_week %>% 
+  filter(EventName=="Sunset") %>% 
+  dplyr::mutate(change=-1*(difftime(EventTime,lag((EventTime+hours(24))),units = "secs"))) %>% 
+  dplyr::mutate(change=as.numeric(change)) %>% 
+  dplyr::mutate(change=sprintf("+%02d:%02d", change %% 3600 %/% 60,  change %% 60 %/% 1)) %>% 
+  filter(EventTime>=Sys.Date()) %>% 
+  filter(min(EventTime)==EventTime) %>% 
+  pull(change)
+
+# Bike score
+bike_score = df.scores %>%
+  filter(dt=="7:00") %>%
+  # filter(dt=="18:00") %>% 
+  dplyr::select(temp,pop,
+                temp_score,pop_score)
+temp_ = bike_score$temp
+pop_ = bike_score$pop
+
+msg_ = glue("Sunrise: {sunrise} ({gain_sunrise})\nSunset: {sunset} ({gain_sunset})\nBike: {scales::number(temp_,accuracy=0.1)} C, PoP: {pop_}%")
+
+```
 ## Next 3 Months
 
 ```{r}
@@ -438,7 +509,8 @@ tmp_dir = tempdir()
 ggsave(filename = paste0(tmp_dir,"/sunlight.jpg"),plot = p_comingweek,device = "jpeg")
 ggsave(filename = paste0(tmp_dir,"/forecast.jpg"),plot = todays_forecast,device = "jpeg")
 
-pushoverr::pushover("Sunlight",attachment = paste0(tmp_dir,"/sunlight.jpg"))
+# pushoverr::pushover("Sunlight",attachment = paste0(tmp_dir,"/sunlight.jpg"))
 pushoverr::pushover("Today's Forecast",attachment = paste0(tmp_dir,"/forecast.jpg"))
+pushoverr::pushover(msg_)
 ```
 
