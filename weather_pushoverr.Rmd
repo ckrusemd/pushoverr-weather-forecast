@@ -341,17 +341,22 @@ gain_sunset = df.dates.next_week %>%
   pull(change)
 
 # Bike score
-bike_score = df.scores %>%
+msg_bike = tryCatch(expr= {
+  bike_score = df.scores %>%
   filter(dt=="7:00") %>%
-  # filter(dt=="18:00") %>% 
   dplyr::select(temp,pop,
                 temp_score,pop_score)
-temp_ = bike_score$temp
-pop_ = bike_score$pop
+  temp_ = bike_score$temp
+  pop_ = bike_score$pop
+  glue("Bike: {scales::number(temp_,accuracy=0.1)} C, PoP: {pop_}%")
+},error=function(e) {
+  glue("Bike: N/A%")
+})
 
-msg_ = glue("Sunrise: {sunrise} ({gain_sunrise})\nSunset: {sunset} ({gain_sunset})\nBike: {scales::number(temp_,accuracy=0.1)} C, PoP: {pop_}%")
+msg_ = glue("Sunrise: {sunrise} ({gain_sunrise})\nSunset: {sunset} ({gain_sunset})\n{msg_bike}")
 
 ```
+
 ## Next 3 Months
 
 ```{r}
@@ -506,8 +511,8 @@ ggplot(df.dates,aes(x=date,y = DailyChange)) +
 ```{r}
 
 tmp_dir = tempdir()
-ggsave(filename = paste0(tmp_dir,"/sunlight.jpg"),plot = p_comingweek,device = "jpeg")
-ggsave(filename = paste0(tmp_dir,"/forecast.jpg"),plot = todays_forecast,device = "jpeg")
+# ggsave(filename = paste0(tmp_dir,"/sunlight.jpg"),plot = p_comingweek,device = "jpeg")
+# ggsave(filename = paste0(tmp_dir,"/forecast.jpg"),plot = todays_forecast,device = "jpeg")
 
 # pushoverr::pushover("Sunlight",attachment = paste0(tmp_dir,"/sunlight.jpg"))
 pushoverr::pushover("Today's Forecast",attachment = paste0(tmp_dir,"/forecast.jpg"))
