@@ -512,7 +512,7 @@ ggplot(df.dates,aes(x=date,y = DailyChange)) +
 
 tmp_dir = tempdir()
 # ggsave(filename = paste0(tmp_dir,"/sunlight.jpg"),plot = p_comingweek,device = "jpeg")
-# ggsave(filename = paste0(tmp_dir,"/forecast.jpg"),plot = todays_forecast,device = "jpeg")
+ggsave(filename = paste0(tmp_dir,"/forecast.jpg"),plot = todays_forecast,device = "jpeg")
 
 # pushoverr::pushover("Sunlight",attachment = paste0(tmp_dir,"/sunlight.jpg"))
 pushoverr::pushover("Today's Forecast",attachment = paste0(tmp_dir,"/forecast.jpg"))
