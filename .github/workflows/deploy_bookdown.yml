@@ -1,0 +1,23 @@
+on:
+  push:
+     branches:
+       - main
+  schedule:
+    - cron:  '1 0 * * *'
+
+name: pushoverr-weather-example
+
+jobs:
+  bookdown:
+    name: pushoverr
+    #runs-on: macOS-latest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: r-lib/actions/setup-r@v2
+      - name: Renviron
+        run: echo $'PUSHOVER_APPKEY=${{ secrets.PUSHOVER_APPKEY }}\PUSHOVER_USERKEY=${{ secrets.PUSHOVER_USERKEY }}\OPENWEATHERMAP_APIKEY=${{ secrets.OPENWEATHERMAP_APIKEY }}' >> Renviron.site
+      - name: Render Book from Action
+        uses: ckrusemd/rmarkdown-action@v0.18
+        with:
+           input_file: index.Rmd

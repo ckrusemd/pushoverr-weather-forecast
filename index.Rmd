@@ -1,0 +1,44 @@
+--- 
+title: "Pushoverr Weather Forecast"
+author: "Christian Kruse"
+date: "`r Sys.Date()`"
+site: bookdown::bookdown_site
+output: bookdown::gitbook
+documentclass: book
+bibliography: [book.bib, packages.bib]
+biblio-style: apalike
+link-citations: yes
+description: "Pushoverr"
+---
+
+# Pushoverr Weather Forecast
+
+
+
+```{r include=FALSE}
+
+if (!require(pacman)) { install.packages("pacman") }
+pacman::p_load(pushoverr,
+               dplyr,
+               tidyr,
+               lubridate,
+               ggplot2,
+               scales,
+               data.table)
+
+# automatically create a bib database for R packages
+knitr::write_bib(c(
+  .packages(), 'bookdown', 'knitr', 'rmarkdown'
+), 'packages.bib')
+
+options(scipen=999)
+
+print_danish_time = function() {
+  time = lubridate::with_tz(Sys.time(), "CET")
+  
+  paste0( strftime(time,tz="CET",format="%A %b")," ",scales::ordinal_format()(lubridate::day(time))," ",strftime(time,tz="CET",format="%Y %H:%M")," ",lubridate::tz(time))
+}
+
+```
+
+This report was compiled `r print_danish_time() `.
