@@ -347,13 +347,14 @@ msg_bike = tryCatch(expr= {
   bike_score = df.scores %>%
   filter(hour_==7) %>%
   slice(c(1)) %>% 
-  dplyr::select(feels_like,pop,uvi,
-                feels_like_score,pop_score,uvi_score)
+  dplyr::select(feels_like,pop,uvi,temp,
+                feels_like_score,pop_score,uvi_score,temp_score)
+  temp_ = bike_score$temp
   feels_like = bike_score$feels_like
   pop_ = bike_score$pop
   uvi_ = bike_score$uvi
-  if (length(temp_)==0) stop();
-  glue("Bike: {scales::number(feels_like,accuracy=0.1)} C, PoP: {pop_}%, UV: {scales::number(uvi_,accuracy=0.1)}")
+  if (length(feels_like)==0) stop();
+  glue("Bike: {scales::number(temp_,accuracy=0.1)} C ({scales::number(feels_like,accuracy=0.1)} C), PoP: {pop_}%, UV: {scales::number(uvi_,accuracy=0.1)}")
 },error=function(e) {
   glue("Bike: N/A")
 })
@@ -362,13 +363,14 @@ msg_bikehome = tryCatch(expr= {
   bike_score = df.scores %>%
   filter(hour_==16) %>%
   slice(c(1)) %>% 
-  dplyr::select(feels_like,pop,uvi,
-                feels_like_score,pop_score,uvi_score)
+  dplyr::select(feels_like,pop,uvi,temp,
+                feels_like_score,pop_score,uvi_score,temp_score)
+  temp_ = bike_score$temp
   feels_like = bike_score$feels_like
   pop_ = bike_score$pop
   uvi_ = bike_score$uvi
-  if (length(temp_)==0) stop();
-  glue("Bike home: {scales::number(feels_like,accuracy=0.1)} C, PoP: {pop_}%, UV: {scales::number(uvi_,accuracy=0.1)}")
+  if (length(feels_like)==0) stop();
+  glue("Bike: {scales::number(temp_,accuracy=0.1)} C ({scales::number(feels_like,accuracy=0.1)} C), PoP: {pop_}%, UV: {scales::number(uvi_,accuracy=0.1)}")
 },error=function(e) {
   glue("Bike home: N/A")
 })
