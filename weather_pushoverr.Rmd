@@ -24,6 +24,7 @@ pacman::p_load(pushoverr,
                suncalc,
                glue,
                hms,
+               stringr,
                data.table)
 
 ```
@@ -324,22 +325,36 @@ df.dates.next_week %>%
 # Pushover
 sunrise = df.dates.next_week %>% filter(EventName=="Sunrise",EventTime>=Sys.Date()) %>% filter(min(EventTime)==EventTime) %>% pull(EventTime) %>% format.Date(.,"%H:%M:%S")
 sunset = df.dates.next_week %>% filter(EventName=="Sunset",EventTime>=Sys.Date()) %>% filter(min(EventTime)==EventTime) %>% pull(EventTime) %>% format.Date(.,"%H:%M:%S")
+
+sunrise_dawn = df.dates.next_week %>% filter(EventName=="Dawn",EventTime>=Sys.Date()) %>% filter(min(EventTime)==EventTime) %>% pull(EventTime) %>% format.Date(.,"%H:%M:%S")
+sunset_dusk = df.dates.next_week %>% filter(EventName=="Dusk",EventTime>=Sys.Date()) %>% filter(min(EventTime)==EventTime) %>% pull(EventTime) %>% format.Date(.,"%H:%M:%S")
+
 gain_sunrise = df.dates.next_week %>% 
   filter(EventName=="Sunrise") %>% 
-  dplyr::mutate(change=-1*(difftime(EventTime,lag((EventTime+hours(24))),units = "secs"))) %>% 
-  dplyr::mutate(change=as.numeric(change)) %>% 
-  dplyr::mutate(change=sprintf("+%02d:%02d", change %% 3600 %/% 60,  change %% 60 %/% 1)) %>% 
+  dplyr::mutate(change=(difftime(EventTime,lag((EventTime+hours(24))),units = "secs"))) %>% 
+  dplyr::mutate(change=lubridate::seconds_to_period(change)) %>% 
+  dplyr::mutate(change=glue("{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>%
   filter(EventTime>=Sys.Date()) %>% 
   filter(min(EventTime)==EventTime) %>% 
   pull(change)
 gain_sunset = df.dates.next_week %>% 
   filter(EventName=="Sunset") %>% 
-  dplyr::mutate(change=-1*(difftime(EventTime,lag((EventTime+hours(24))),units = "secs"))) %>% 
-  dplyr::mutate(change=-1*as.numeric(change)) %>% 
-  # dplyr::mutate(change=sprintf("+%02d:%02d", change %% 3600 %/% 60,  change %% 60 %/% 1)) %>% 
-  dplyr::mutate(change=sprintf("+%02d:%02d", change %/% 60,  change %% 60 %/% 1)) %>% 
+  dplyr::mutate(change=(difftime(EventTime,lag((EventTime+hours(24))),units = "secs"))) %>% 
+  dplyr::mutate(change=lubridate::seconds_to_period(change)) %>% 
+  dplyr::mutate(change=glue("{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>%
   filter(EventTime>=Sys.Date()) %>% 
   filter(min(EventTime)==EventTime) %>% 
+  pull(change)
+total_gain = df.dates.next_week %>% 
+  filter(EventName %in% c("Sunset","Sunrise"))  %>%
+  group_by(EventName) %>% 
+  dplyr::mutate(change=(difftime(EventTime,lag((EventTime+hours(24))),units = "secs"))) %>% 
+  filter(EventTime>=Sys.Date()) %>%
+  filter(min(EventTime)==EventTime) %>%
+  ungroup() %>% 
+  dplyr::summarize(change=sum(abs(change))) %>% 
+  dplyr::mutate(change=lubridate::seconds_to_period(change)) %>% 
+  dplyr::mutate(change=glue("+{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>% 
   pull(change)
 
 # Bike score
@@ -354,7 +369,7 @@ msg_bike = tryCatch(expr= {
   pop_ = bike_score$pop
   uvi_ = bike_score$uvi
   if (length(feels_like)==0) stop();
-  glue("Bike: {scales::number(temp_,accuracy=0.1)} C ({scales::number(feels_like,accuracy=0.1)} C), PoP: {pop_}%, UV: {scales::number(uvi_,accuracy=0.1)}")
+  glue("Bike: {scales::number(temp_,accuracy=0.1)} C ({scales::number(feels_like,accuracy=0.1)} C), PoP: {pop_}%, UV: {scales::number(uvi_,accuracy=0.1)}, W: {scales::number(wind_gust_,accuracy=0.1)}")
 },error=function(e) {
   glue("Bike: N/A")
 })
@@ -363,19 +378,20 @@ msg_bikehome = tryCatch(expr= {
   bike_score = df.scores %>%
   filter(hour_==16) %>%
   slice(c(1)) %>% 
-  dplyr::select(feels_like,pop,uvi,temp,
-                feels_like_score,pop_score,uvi_score,temp_score)
+  dplyr::select(feels_like,pop,uvi,temp,wind_gust,
+                feels_like_score,pop_score,uvi_score,temp_score,wind_gust_score)
   temp_ = bike_score$temp
   feels_like = bike_score$feels_like
   pop_ = bike_score$pop
   uvi_ = bike_score$uvi
+  wind_gust_ = bike_score$wind_gust_
   if (length(feels_like)==0) stop();
-  glue("Bike: {scales::number(temp_,accuracy=0.1)} C ({scales::number(feels_like,accuracy=0.1)} C), PoP: {pop_}%, UV: {scales::number(uvi_,accuracy=0.1)}")
+  glue("Bike home: {scales::number(temp_,accuracy=0.1)} C ({scales::number(feels_like,accuracy=0.1)} C), PoP: {pop_}%, UV: {scales::number(uvi_,accuracy=0.1)}, W: {scales::number(wind_gust_,accuracy=0.1)}")
 },error=function(e) {
   glue("Bike home: N/A")
 })
 
-msg_ = glue("Sunrise: {sunrise} ({gain_sunrise})\nSunset: {sunset} ({gain_sunset})\n{msg_bike}\n{msg_bikehome}")
+msg_ = glue("Dawn: {sunrise_dawn}\nSunrise: {sunrise} ({gain_sunrise})\nSunset: {sunset} ({gain_sunset})\nDusk: {sunset_dusk}\nTotal gain: {total_gain}\n{msg_bike}\n{msg_bikehome}")
 
 ```
 
