@@ -322,7 +322,7 @@ df.dates.next_week %>%
 
 ```{r}
 
-# Pushover
+# Sun hours
 sunrise = df.dates.next_week %>% filter(EventName=="Sunrise",EventTime>=Sys.Date()) %>% filter(min(EventTime)==EventTime) %>% pull(EventTime) %>% format.Date(.,"%H:%M:%S")
 sunset = df.dates.next_week %>% filter(EventName=="Sunset",EventTime>=Sys.Date()) %>% filter(min(EventTime)==EventTime) %>% pull(EventTime) %>% format.Date(.,"%H:%M:%S")
 
@@ -362,12 +362,13 @@ msg_bike = tryCatch(expr= {
   bike_score = df.scores %>%
   filter(hour_==7) %>%
   slice(c(1)) %>% 
-  dplyr::select(feels_like,pop,uvi,temp,
-                feels_like_score,pop_score,uvi_score,temp_score)
+  dplyr::select(feels_like,pop,uvi,temp,wind_gust,
+                feels_like_score,pop_score,uvi_score,temp_score,wind_gust_score)
   temp_ = bike_score$temp
   feels_like = bike_score$feels_like
   pop_ = bike_score$pop
   uvi_ = bike_score$uvi
+  wind_gust_ = bike_score$wind_gust_
   if (length(feels_like)==0) stop();
   glue("Bike: {scales::number(temp_,accuracy=0.1)} C ({scales::number(feels_like,accuracy=0.1)} C), PoP: {pop_}%, UV: {scales::number(uvi_,accuracy=0.1)}, W: {scales::number(wind_gust_,accuracy=0.1)}")
 },error=function(e) {
@@ -391,7 +392,18 @@ msg_bikehome = tryCatch(expr= {
   glue("Bike home: N/A")
 })
 
-msg_ = glue("Dawn: {sunrise_dawn}\nSunrise: {sunrise} ({gain_sunrise})\nSunset: {sunset} ({gain_sunset})\nDusk: {sunset_dusk}\nTotal gain: {total_gain}\n{msg_bike}\n{msg_bikehome}")
+# Weather forecast
+max_uv = df.scores %>% filter(dt %like% format(Sys.Date(),"%A")) %>% dplyr::mutate(dt=paste0(dt)) %>% filter(dt %like% paste(glue("{str_pad(seq(6,22),side = 'left',pad = '0',width=2)}:00"),collapse="|")) %>% pull(uvi) %>% max()
+max_temp = df.scores %>% filter(dt %like% format(Sys.Date(),"%A")) %>% dplyr::mutate(dt=paste0(dt)) %>% filter(dt %like% paste(glue("{str_pad(seq(6,22),side = 'left',pad = '0',width=2)}:00"),collapse="|")) %>% pull(temp) %>% max()
+min_temp = df.scores %>% filter(dt %like% format(Sys.Date(),"%A")) %>% dplyr::mutate(dt=paste0(dt)) %>% filter(dt %like% paste(glue("{str_pad(seq(6,22),side = 'left',pad = '0',width=2)}:00"),collapse="|")) %>% pull(temp) %>% min()
+mean_windgust = df.scores %>% filter(dt %like% format(Sys.Date(),"%A")) %>% dplyr::mutate(dt=paste0(dt)) %>% filter(dt %like% paste(glue("{str_pad(seq(6,22),side = 'left',pad = '0',width=2)}:00"),collapse="|")) %>% pull(wind_gust) %>% mean()
+mean_wind = df.scores %>% filter(dt %like% format(Sys.Date(),"%A")) %>% dplyr::mutate(dt=paste0(dt)) %>% filter(dt %like% paste(glue("{str_pad(seq(6,22),side = 'left',pad = '0',width=2)}:00"),collapse="|")) %>% pull(wind_speed) %>% mean()
+mean_pop = df.scores %>% filter(dt %like% format(Sys.Date(),"%A")) %>% dplyr::mutate(dt=paste0(dt)) %>% filter(dt %like% paste(glue("{str_pad(seq(6,22),side = 'left',pad = '0',width=2)}:00"),collapse="|")) %>% pull(pop) %>% mean()
+mean_clouds = df.scores %>% filter(dt %like% format(Sys.Date(),"%A")) %>% dplyr::mutate(dt=paste0(dt)) %>% filter(dt %like% paste(glue("{str_pad(seq(6,22),side = 'left',pad = '0',width=2)}:00"),collapse="|")) %>% pull(clouds) %>% mean()
+best_hours = df.scores %>% filter(dt %like% format(Sys.Date(),"%A")) %>% dplyr::mutate(dt=paste0(dt)) %>% filter(dt %like% paste(glue("{str_pad(seq(6,20),side = 'left',pad = '0',width=2)}:00"),collapse="|")) %>% dplyr::summarize(dt=dt,score=temp_score+uvi_score+clouds_score+wind_gust_score+pop_score) %>% top_n(wt = score,n = 1) %>% pull(dt)
+msg_forecast = glue("Forecast:\nUVI: {scales::number(max_uv,accuracy=0.1)}, High: {scales::number(max_temp,accuracy=0.1)}, Low: {scales::number(min_temp,accuracy=0.1)}\nPoP: {scales::number(mean_pop,accuracy=0.1)}, Clouds: {scales::number(mean_clouds,accuracy=0.1)}\nWind: {scales::number(mean_wind,accuracy=0.1)}, Windgust: {scales::number(mean_windgust,accuracy=0.1)}\nBest Hour: {best_hours}")
+
+msg_ = glue("Dawn: {sunrise_dawn}\nSunrise: {sunrise} ({gain_sunrise})\nSunset: {sunset} ({gain_sunset})\nDusk: {sunset_dusk}\nTotal gain: {total_gain}\n\n{msg_bike}\n{msg_bikehome}\n\n{msg_forecast}")
 
 ```
 
