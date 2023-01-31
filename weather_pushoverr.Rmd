@@ -411,8 +411,7 @@ msg_ = glue("Dawn: {sunrise_dawn}\nSunrise: {sunrise} ({gain_sunrise})\nSunset: 
 
 ```{r}
 
-seq_next_3_months = 
-  seq.Date(Sys.Date(),Sys.Date()+months(3),by = "1 day")
+seq_next_3_months = seq.Date(from = Sys.Date(),to = Sys.Date()+90,by = "days")
 
 ### Next Week
 df.dates.next_3_months =
