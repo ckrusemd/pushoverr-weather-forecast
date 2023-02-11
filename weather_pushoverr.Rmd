@@ -186,17 +186,19 @@ df.score = df.score %>%
 df.dt_score = df.score %>% 
   dplyr::select(dt,score)
 
+# Max score
 
 # Then gather and join on score
 df.score %>% 
   dplyr::select(dt,score,contains(factors)) %>% 
   gather(metric,value,score:ncol(.)) %>% 
   inner_join(df.dt_score, by = "dt") %>% 
+  dplyr::mutate(dt=factor(dt,levels=paste0(str_pad(c(seq(1,23,1),0),width = 2,side = "left",pad = "0"),":00"))) %>% 
   dplyr::mutate(metric=factor(metric,levels=c("score",factors))) %>% 
   ggplot(.,aes(x=metric,y=dt)) +
   geom_tile(aes(fill=score)) + 
   scale_fill_gradient2(low="red",mid="white",high="green",midpoint=50,limits = c(0,100)) +
-  geom_text(aes(label=paste0(round(value,0))),color="black") +
+  geom_text(aes(label=paste0(ifelse(metric %in% c("uvi","temp"),round(value,1),round(value,0)))),color="black") +
   theme_bw() +
   theme(legend.position="null") +
   labs(x=NULL,
@@ -224,6 +226,12 @@ df.score %>%
 order = c("temp","uvi","clouds","pop")
 todays_forecast = draw_scorecard(order)
 todays_forecast
+```
+```{r}
+
+order_beach_forecast = c("temp","uvi","clouds","pop","wind_gust")
+todays_beach_forecast = draw_scorecard(factors = order_beach_forecast)
+todays_beach_forecast
 ```
 
 
@@ -562,9 +570,11 @@ ggplot(df.dates,aes(x=date,y = DailyChange)) +
 tmp_dir = tempdir()
 # ggsave(filename = paste0(tmp_dir,"/sunlight.jpg"),plot = p_comingweek,device = "jpeg")
 ggsave(filename = paste0(tmp_dir,"/forecast.jpg"),plot = todays_forecast,device = "jpeg")
+ggsave(filename = paste0(tmp_dir,"/beach_forecast.jpg"),plot = todays_beach_forecast,device = "jpeg")
 
 # pushoverr::pushover("Sunlight",attachment = paste0(tmp_dir,"/sunlight.jpg"))
 pushoverr::pushover("Today's Forecast",attachment = paste0(tmp_dir,"/forecast.jpg"))
+pushoverr::pushover("Today's Beach Forecast",attachment = paste0(tmp_dir,"/beach_forecast.jpg"))
 pushoverr::pushover(msg_)
 ```
 
