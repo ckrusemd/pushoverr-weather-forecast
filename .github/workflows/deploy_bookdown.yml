@@ -3,7 +3,7 @@ on:
      branches:
        - master
   schedule:
-    - cron:  '45 4,13 * * *'
+    - cron:  '45 3,14 * * *'
 
 name: pushoverr-weather-example
 
