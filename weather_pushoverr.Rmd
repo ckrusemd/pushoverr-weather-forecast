@@ -145,9 +145,9 @@ rescale_capped = function(values,from) {
 
 ```{r theonewithrain1}
 df.scores = res_json_hourly %>% 
+  dplyr::mutate(dt=format(dt,"%H:%M")) %>% 
   filter(dt<=ymd_hms(paste0(Sys.Date()," 00:00:00"),tz = "Europe/Copenhagen")+days(1)) %>% 
-  dplyr::mutate(dt=format(dt,"%H:%M"),
-                pop=pop*100)
+  dplyr::mutate(pop=pop*100)
 ```
 
 
@@ -156,8 +156,8 @@ df.scores_rain = res_json_hourly %>%
   dplyr::select(dt,rain) %>% 
   unnest(rain) %>% 
   replace_na(list(`1h`=0)) %>% 
-  filter(dt<=ymd_hms(paste0(Sys.Date()," 00:00:00"),tz = "Europe/Copenhagen")+days(1)) %>% 
   dplyr::mutate(dt=format(dt,"%H:%M")) %>% 
+  filter(dt<=ymd_hms(paste0(Sys.Date()," 00:00:00"),tz = "Europe/Copenhagen")+days(1)) %>% 
   setNames(.,c("dt","rainmm"))
 ```
 
