@@ -149,10 +149,17 @@ df.scores = res_json_hourly %>%
   filter(dt<=ymd_hms(paste0(Sys.Date()," 00:00:00"),tz = "Europe/Copenhagen")+days(1)) %>% 
   dplyr::mutate(dt=format(dt,"%H:%M"),
                 pop=pop*100) 
-# %>% 
-  # dplyr::mutate(rain=.$rain$`1h`)
 
-# df.scores$rain[is.na(df.scores$rain)] <- 0
+df.scores_rain = res_json_hourly %>% 
+  dplyr::select(dt,rain) %>% 
+  unnest(rain) %>% 
+  replace_na(list(`1h`=0)) %>% 
+  filter(dt<=ymd_hms(paste0(Sys.Date()," 00:00:00"),tz = "Europe/Copenhagen")+days(1)) %>% 
+  dplyr::mutate(dt=format(dt,"%H:%M")) %>% 
+  setNames(.,c("dt","rainmm"))
+
+df.scores = df.scores %>% 
+  inner_join(df.scores_rain)
 
 df.scores = df.scores %>% 
   # dplyr::mutate(rain_score=rescale_capped(rain,from = c(10,0))) %>% 
@@ -163,7 +170,9 @@ df.scores = df.scores %>%
   dplyr::mutate(clouds_score=rescale_capped(clouds,from = c(100,0))) %>% 
   dplyr::mutate(wind_speed_score=rescale_capped(wind_speed,from = c(10,0))) %>% 
   dplyr::mutate(wind_gust_score=rescale_capped(wind_gust,from = c(10,0))) %>% 
-  dplyr::mutate(pop_score=rescale_capped(pop,from = c(100,0))) 
+  dplyr::mutate(pop_score=rescale_capped(pop,from = c(100,0)))  %>% 
+  dplyr::mutate(rainmm_score=rescale_capped(rainmm,from = c(100,0))) 
+
 
 
 ```
@@ -198,7 +207,7 @@ df.score %>%
   ggplot(.,aes(x=metric,y=dt)) +
   geom_tile(aes(fill=score)) + 
   scale_fill_gradient2(low="red",mid="white",high="green",midpoint=50,limits = c(0,100)) +
-  geom_text(aes(label=paste0(ifelse(metric %in% c("uvi","temp"),round(value,1),round(value,0)))),color="black") +
+  geom_text(aes(label=paste0(ifelse(metric %in% c("uvi","temp","rainmm"),round(value,1),round(value,0)))),color="black") +
   theme_bw() +
   theme(legend.position="null") +
   labs(x=NULL,
@@ -209,7 +218,7 @@ df.score %>%
                             "uvi" = "UV Index",
                             "clouds" = "Clouds (%)",
                             "pop" = "Precipitation (%)",
-                            "rain" = "Rain (mm)",
+                            "rainmm" = "Rain (mm)",
                             "wind_speed" = "Wind Speed (m/s)",
                             "wind_gust" = "Wind Gusts (m/s)"))
 
@@ -223,7 +232,7 @@ df.score %>%
 
 ```{r}
 
-order = c("temp","uvi","clouds","pop")
+order = c("temp","uvi","clouds","pop","rainmm")
 todays_forecast = draw_scorecard(order)
 todays_forecast
 ```
@@ -359,10 +368,11 @@ total_gain = df.dates.next_week %>%
   dplyr::mutate(change=(difftime(EventTime,lag((EventTime+hours(24))),units = "secs"))) %>% 
   filter(EventTime>=Sys.Date()) %>%
   filter(min(EventTime)==EventTime) %>%
+  dplyr::mutate(change=ifelse(EventName=="Sunrise",change*-1,change)) %>% 
   ungroup() %>% 
-  dplyr::summarize(change=sum(abs(change))) %>% 
+  dplyr::summarize(change=sum(change)) %>% 
   dplyr::mutate(change=lubridate::seconds_to_period(change)) %>% 
-  dplyr::mutate(change=glue("+{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>% 
+  dplyr::mutate(change=glue("{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>% 
   pull(change)
 
 # Bike score
@@ -574,7 +584,7 @@ ggsave(filename = paste0(tmp_dir,"/beach_forecast.jpg"),plot = todays_beach_fore
 
 # pushoverr::pushover("Sunlight",attachment = paste0(tmp_dir,"/sunlight.jpg"))
 pushoverr::pushover("Today's Forecast",attachment = paste0(tmp_dir,"/forecast.jpg"))
-pushoverr::pushover("Today's Beach Forecast",attachment = paste0(tmp_dir,"/beach_forecast.jpg"))
+# pushoverr::pushover("Today's Beach Forecast",attachment = paste0(tmp_dir,"/beach_forecast.jpg"))
 pushoverr::pushover(msg_)
 ```
 
