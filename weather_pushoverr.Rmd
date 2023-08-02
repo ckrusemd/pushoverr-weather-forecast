@@ -143,7 +143,7 @@ rescale_capped = function(values,from) {
 
 ```
 
-```{r}
+```{r theonewithrain}
 
 df.scores = res_json_hourly %>% 
   filter(dt<=ymd_hms(paste0(Sys.Date()," 00:00:00"),tz = "Europe/Copenhagen")+days(1)) %>% 
