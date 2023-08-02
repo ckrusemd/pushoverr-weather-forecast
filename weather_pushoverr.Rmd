@@ -177,7 +177,7 @@ df.scores = df.scores %>%
 
 ```
 
-```{r}
+```{r drawscorecard}
 
 draw_scorecard = function(factors) {
   
@@ -230,7 +230,7 @@ df.score %>%
 
 ## Outdoor Sun
 
-```{r}
+```{r outdoorsun}
 
 order = c("temp","uvi","clouds","pop","rainmm")
 todays_forecast = draw_scorecard(order)
@@ -337,7 +337,7 @@ df.dates.next_week %>%
 # Next Month
 ```
 
-```{r}
+```{r sunrise}
 
 # Sun hours
 sunrise = df.dates.next_week %>% filter(EventName=="Sunrise",EventTime>=Sys.Date()) %>% filter(min(EventTime)==EventTime) %>% pull(EventTime) %>% format.Date(.,"%H:%M:%S")
@@ -427,7 +427,7 @@ msg_ = glue("Dawn: {sunrise_dawn}\nSunrise: {sunrise} ({gain_sunrise})\nSunset: 
 
 ## Next 3 Months
 
-```{r}
+```{r nextmonths}
 
 seq_next_3_months = seq.Date(from = Sys.Date(),to = Sys.Date()+90,by = "days")
 
@@ -575,7 +575,7 @@ ggplot(df.dates,aes(x=date,y = DailyChange)) +
 
 # Send out
 
-```{r}
+```{r sendout}
 
 tmp_dir = tempdir()
 # ggsave(filename = paste0(tmp_dir,"/sunlight.jpg"),plot = p_comingweek,device = "jpeg")
