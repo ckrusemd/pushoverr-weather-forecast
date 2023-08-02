@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = FALSE,message = FALSE,warning = FALSE)
 
 # Pushoverr Weather Forecast
 
-```{r}
+```{r forecast1}
 
 if (!require(pacman)) { install.packages("pacman") }
 pacman::p_load(pushoverr,
@@ -43,13 +43,13 @@ pushoverr::pushover("Hello world")
 ```
 
 
-```{r}
+```{r forecast2}
 convert_timestamp = function(timestamp) {
   return( as.POSIXct( timestamp ,tz = "Europe/Copenhagen",origin="1970-01-01") )
 }
 ```
 
-```{r}
+```{r forecast3}
 convert_dataframe_timestamps = function(df) {
   df$dt = convert_timestamp(df$dt)
   df$sunrise = convert_timestamp(df$sunrise)
@@ -75,7 +75,7 @@ convert_kelvin= function(kelvin) {
 ```
 
 
-```{r include=TRUE}
+```{r forecast4,include=TRUE}
 
 lat = 55.771979
 lon = 12.494786
