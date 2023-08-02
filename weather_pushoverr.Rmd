@@ -124,7 +124,7 @@ So you don't need to look out the window. :-)
 
 # Openweather: Today Outdoors Weather
 
-```{r}
+```{r forecast5}
 
 rescale_capped = function(values,from) {
   
