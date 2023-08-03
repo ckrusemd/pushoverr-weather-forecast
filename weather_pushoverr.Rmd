@@ -122,7 +122,7 @@ So you don't need to look out the window. :-)
 * Wind Direction: ```r wind_angle_to_compass( res_json_current$wind_deg )```
 
 ```{r theonewithrain02}
-res_json_hourly
+pushoverr::pushover(res_json_hourly$dt)
 ```
 
 
