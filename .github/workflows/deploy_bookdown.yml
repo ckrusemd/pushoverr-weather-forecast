@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Renviron
-        run: echo $'PUSHOVER_APPKEY=${{ secrets.PUSHOVER_APPKEY }}\nPUSHOVER_USERKEY=${{ secrets.PUSHOVER_USERKEY }}' >> Renviron.site
+        run: echo $'PUSHOVER_APPKEY=${{ secrets.PUSHOVER_APPKEY }}\nPUSHOVER_USERKEY=${{ secrets.PUSHOVER_USERKEY }}\nOPENWEATHERMAP_APIKEY=${{ secrets.OPENWEATHERMAP_APIKEY }}' >> Renviron.site
       - name: Render Book from Action
         uses: ckrusemd/rmarkdown-action@v0.21
         with:
