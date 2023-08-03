@@ -122,8 +122,15 @@ So you don't need to look out the window. :-)
 * Wind Direction: ```r wind_angle_to_compass( res_json_current$wind_deg )```
 
 ```{r theonewithrain02}
-pushoverr::pushover(res_json_hourly$dt)
+res_json_hourly
 ```
 
+
+```{r theonewithrain1}
+df.scores = res_json_hourly %>% 
+  filter(dt<=lubridate::ymd_hms(paste0(Sys.Date()," 00:00:00"),tz = "Europe/Copenhagen")+lubridate::days(1)) %>% 
+  dplyr::mutate(dt=format(dt,"%H:%M")) %>% 
+  dplyr::mutate(pop=pop*100)
+```
 
 
