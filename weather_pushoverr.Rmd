@@ -144,8 +144,11 @@ rescale_capped = function(values,from) {
 ```
 
 ```{r theonewithrain0}
-res_json_hourly %>% 
-  filter(dt<=ymd_hms(paste0(Sys.Date()," 00:00:00"),tz = "Europe/Copenhagen")+days(1))
+res_json_hourly
+```
+
+```{r theonewithrain02}
+message(res_json_hourly)
 ```
 
 ```{r theonewithrain1}
