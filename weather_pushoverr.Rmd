@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = FALSE,message = FALSE,warning = FALSE)
 
 # Pushoverr Weather Forecast
 
-```{r forecast1}
+```{r}
 
 if (!require(pacman)) { install.packages("pacman") }
 pacman::p_load(pushoverr,
@@ -43,13 +43,13 @@ pushoverr::pushover("Hello world")
 ```
 
 
-```{r forecast2}
+```{r}
 convert_timestamp = function(timestamp) {
   return( as.POSIXct( timestamp ,tz = "Europe/Copenhagen",origin="1970-01-01") )
 }
 ```
 
-```{r forecast3}
+```{r}
 convert_dataframe_timestamps = function(df) {
   df$dt = convert_timestamp(df$dt)
   df$sunrise = convert_timestamp(df$sunrise)
@@ -75,7 +75,7 @@ convert_kelvin= function(kelvin) {
 ```
 
 
-```{r forecast4,include=TRUE}
+```{r include=TRUE}
 
 lat = 55.771979
 lon = 12.494786
@@ -120,32 +120,6 @@ So you don't need to look out the window. :-)
 * Wind Speed: ```r res_json_current$wind_speed ```
 * Wind Degree: ```r res_json_current$wind_deg ```
 * Wind Direction: ```r wind_angle_to_compass( res_json_current$wind_deg )```
-
-
-# Openweather: Today Outdoors Weather
-
-```{r forecast5}
-
-rescale_capped = function(values,from) {
-  
-  if (from[2]>from[1]) {
-    values = pmin(from[2],values)
-    values = pmax(from[1],values)
-    return( (values-from[1])/(from[2] - from[1]) * 100 )
-  } else {
-    values = pmin(from[1],values)
-    values = pmax(from[2],values)
-    #values = from[1] - values
-    return( (values-from[1])/(from[2] - from[1]) * 100 )
-    
-  }
-}
-
-```
-
-```{r theonewithrain0}
-res_json_hourly
-```
 
 ```{r theonewithrain02}
 message(res_json_hourly)
