@@ -143,10 +143,15 @@ rescale_capped = function(values,from) {
 
 ```
 
+```{r theonewithrain0}
+res_json_hourly %>% 
+  filter(dt<=ymd_hms(paste0(Sys.Date()," 00:00:00"),tz = "Europe/Copenhagen")+days(1))
+```
+
 ```{r theonewithrain1}
 df.scores = res_json_hourly %>% 
-  dplyr::mutate(dt=format(dt,"%H:%M")) %>% 
   filter(dt<=ymd_hms(paste0(Sys.Date()," 00:00:00"),tz = "Europe/Copenhagen")+days(1)) %>% 
+  dplyr::mutate(dt=format(dt,"%H:%M")) %>% 
   dplyr::mutate(pop=pop*100)
 ```
 
