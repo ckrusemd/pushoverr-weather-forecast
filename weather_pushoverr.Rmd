@@ -150,13 +150,22 @@ df.scores = res_json_hourly %>%
   dplyr::mutate(dt=format(dt,"%H:%M"),
                 pop=pop*100) 
 
-df.scores_rain = res_json_hourly %>% 
+if ( !is.null(res_json_hourly$rain) ) {
+  df.scores_rain = res_json_hourly %>% 
   dplyr::select(dt,rain) %>% 
   unnest(rain) %>% 
   replace_na(list(`1h`=0)) %>% 
   filter(dt<=ymd_hms(paste0(Sys.Date()," 00:00:00"),tz = "Europe/Copenhagen")+days(1)) %>% 
   dplyr::mutate(dt=format(dt,"%H:%M")) %>% 
   setNames(.,c("dt","rainmm"))
+} else {
+  df.scores_rain = res_json_hourly %>% 
+  dplyr::select(dt) %>% 
+  filter(dt<=ymd_hms(paste0(Sys.Date()," 00:00:00"),tz = "Europe/Copenhagen")+days(1)) %>% 
+  dplyr::mutate(dt=format(dt,"%H:%M"),
+                rainmm=0)
+}
+
 
 df.scores = df.scores %>% 
   inner_join(df.scores_rain)
