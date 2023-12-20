@@ -357,9 +357,9 @@ sunset_dusk = df.dates.next_week %>% filter(EventName=="Dusk",EventTime>=Sys.Dat
 
 gain_sunrise = df.dates.next_week %>% 
   filter(EventName=="Sunrise") %>% 
-  dplyr::mutate(change=(difftime(EventTime,lag((EventTime+hours(24))),units = "secs"))) %>% 
+  dplyr::mutate(change=(difftime(lag((EventTime+hours(24))),EventTime,units = "secs"))) %>% 
   dplyr::mutate(change=lubridate::seconds_to_period(change)) %>% 
-  dplyr::mutate(change=glue("{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>%
+  dplyr::mutate(change=glue("{ifelse(change$.Data<0,'-','')}{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>%
   filter(EventTime>=Sys.Date()) %>% 
   filter(min(EventTime)==EventTime) %>% 
   pull(change)
@@ -367,21 +367,22 @@ gain_sunset = df.dates.next_week %>%
   filter(EventName=="Sunset") %>% 
   dplyr::mutate(change=(difftime(EventTime,lag((EventTime+hours(24))),units = "secs"))) %>% 
   dplyr::mutate(change=lubridate::seconds_to_period(change)) %>% 
-  dplyr::mutate(change=glue("{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>%
+  dplyr::mutate(change=glue("{ifelse(change$.Data<0,'-','')}{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>%
   filter(EventTime>=Sys.Date()) %>% 
   filter(min(EventTime)==EventTime) %>% 
   pull(change)
 total_gain = df.dates.next_week %>% 
   filter(EventName %in% c("Sunset","Sunrise"))  %>%
   group_by(EventName) %>% 
-  dplyr::mutate(change=(difftime(EventTime,lag((EventTime+hours(24))),units = "secs"))) %>% 
+  dplyr::mutate(change=ifelse(EventName=="Sunrise",
+                              (difftime(lag((EventTime+hours(24))),EventTime,units = "secs")),
+                              (difftime(EventTime,lag((EventTime+hours(24))),units = "secs")))) %>% 
   filter(EventTime>=Sys.Date()) %>%
   filter(min(EventTime)==EventTime) %>%
-  dplyr::mutate(change=ifelse(EventName=="Sunrise",change*-1,change)) %>% 
   ungroup() %>% 
   dplyr::summarize(change=sum(change)) %>% 
   dplyr::mutate(change=lubridate::seconds_to_period(change)) %>% 
-  dplyr::mutate(change=glue("{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>% 
+  dplyr::mutate(change=glue("{ifelse(change$.Data<0,'-','')}{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>%
   pull(change)
 
 # Bike score
