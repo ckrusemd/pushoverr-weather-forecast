@@ -80,7 +80,7 @@ convert_kelvin= function(kelvin) {
 lat = 55.771979
 lon = 12.494786
 
-res = GET(paste0("https://api.openweathermap.org/data/2.5/onecall?lat=",lat,"&lon=",lon,"&appid=",OPENWEATHERMAP_APIKEY)) # Yeah, should really hide that api key.
+res = GET(paste0("https://api.openweathermap.org/data/3.0/onecall?lat=",lat,"&lon=",lon,"&appid=",OPENWEATHERMAP_APIKEY)) # Yeah, should really hide that api key.
 
 res_json = jsonlite::fromJSON( rawToChar( res$content ) )
 
@@ -359,7 +359,7 @@ gain_sunrise = df.dates.next_week %>%
   filter(EventName=="Sunrise") %>% 
   dplyr::mutate(change=(difftime(lag((EventTime+hours(24))),EventTime,units = "secs"))) %>% 
   dplyr::mutate(change=lubridate::seconds_to_period(change)) %>% 
-  dplyr::mutate(change=glue("{ifelse(change$.Data<0,'-','')}{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>%
+  dplyr::mutate(change=glue("{ifelse(change$.Data<0,'','')}{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>%
   filter(EventTime>=Sys.Date()) %>% 
   filter(min(EventTime)==EventTime) %>% 
   pull(change)
@@ -367,7 +367,7 @@ gain_sunset = df.dates.next_week %>%
   filter(EventName=="Sunset") %>% 
   dplyr::mutate(change=(difftime(EventTime,lag((EventTime+hours(24))),units = "secs"))) %>% 
   dplyr::mutate(change=lubridate::seconds_to_period(change)) %>% 
-  dplyr::mutate(change=glue("{ifelse(change$.Data<0,'-','')}{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>%
+  dplyr::mutate(change=glue("{ifelse(change$.Data<0,'','')}{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>%
   filter(EventTime>=Sys.Date()) %>% 
   filter(min(EventTime)==EventTime) %>% 
   pull(change)
@@ -382,7 +382,7 @@ total_gain = df.dates.next_week %>%
   ungroup() %>% 
   dplyr::summarize(change=sum(change)) %>% 
   dplyr::mutate(change=lubridate::seconds_to_period(change)) %>% 
-  dplyr::mutate(change=glue("{ifelse(change$.Data<0,'-','')}{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>%
+  dplyr::mutate(change=glue("{ifelse(change$.Data<0,'','')}{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>%
   pull(change)
 
 # Bike score
