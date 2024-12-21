@@ -355,11 +355,21 @@ sunset = df.dates.next_week %>% filter(EventName=="Sunset",EventTime>=Sys.Date()
 sunrise_dawn = df.dates.next_week %>% filter(EventName=="Dawn",EventTime>=Sys.Date()) %>% filter(min(EventTime)==EventTime) %>% pull(EventTime) %>% format.Date(.,"%H:%M:%S")
 sunset_dusk = df.dates.next_week %>% filter(EventName=="Dusk",EventTime>=Sys.Date()) %>% filter(min(EventTime)==EventTime) %>% pull(EventTime) %>% format.Date(.,"%H:%M:%S")
 
+gain_dawn = df.dates.next_week %>% 
+  filter(EventName=="Dawn") %>% 
+  dplyr::mutate(change=(difftime(lag((EventTime+hours(24))),EventTime,units = "secs"))) %>% 
+  dplyr::mutate(change=lubridate::seconds_to_period(change)) %>% 
+  dplyr::mutate(change=glue("{ifelse(change$.Data<0,'','-')}{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>%
+  # dplyr::mutate(change=glue("{ifelse(change$.Data<0,'','')}{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>%
+  filter(EventTime>=Sys.Date()) %>% 
+  filter(min(EventTime)==EventTime) %>% 
+  pull(change)
 gain_sunrise = df.dates.next_week %>% 
   filter(EventName=="Sunrise") %>% 
   dplyr::mutate(change=(difftime(lag((EventTime+hours(24))),EventTime,units = "secs"))) %>% 
   dplyr::mutate(change=lubridate::seconds_to_period(change)) %>% 
-  dplyr::mutate(change=glue("{ifelse(change$.Data<0,'','')}{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>%
+  dplyr::mutate(change=glue("{ifelse(change$.Data<0,'','-')}{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>%
+  # dplyr::mutate(change=glue("{ifelse(change$.Data<0,'','')}{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>%
   filter(EventTime>=Sys.Date()) %>% 
   filter(min(EventTime)==EventTime) %>% 
   pull(change)
@@ -367,7 +377,17 @@ gain_sunset = df.dates.next_week %>%
   filter(EventName=="Sunset") %>% 
   dplyr::mutate(change=(difftime(EventTime,lag((EventTime+hours(24))),units = "secs"))) %>% 
   dplyr::mutate(change=lubridate::seconds_to_period(change)) %>% 
-  dplyr::mutate(change=glue("{ifelse(change$.Data<0,'','')}{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>%
+  dplyr::mutate(change=glue("{ifelse(change$.Data<0,'-','')}{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>%
+  # dplyr::mutate(change=glue("{ifelse(change$.Data<0,'','')}{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>%
+  filter(EventTime>=Sys.Date()) %>% 
+  filter(min(EventTime)==EventTime) %>% 
+  pull(change)
+gain_dusk = df.dates.next_week %>% 
+  filter(EventName=="Dusk") %>% 
+  dplyr::mutate(change=(difftime(lag((EventTime+hours(24))),EventTime,units = "secs"))) %>% 
+  dplyr::mutate(change=lubridate::seconds_to_period(change)) %>% 
+  dplyr::mutate(change=glue("{ifelse(change$.Data<0,'','-')}{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>%
+  # dplyr::mutate(change=glue("{ifelse(change$.Data<0,'','')}{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>%
   filter(EventTime>=Sys.Date()) %>% 
   filter(min(EventTime)==EventTime) %>% 
   pull(change)
@@ -382,7 +402,7 @@ total_gain = df.dates.next_week %>%
   ungroup() %>% 
   dplyr::summarize(change=sum(change)) %>% 
   dplyr::mutate(change=lubridate::seconds_to_period(change)) %>% 
-  dplyr::mutate(change=glue("{ifelse(change$.Data<0,'','')}{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>%
+  dplyr::mutate(change=glue("{ifelse(change$.Data<0,'-','')}{change$minute}:{str_pad(abs(change$.Data),2,pad='0')}")) %>%
   pull(change)
 
 # Bike score
@@ -431,8 +451,9 @@ mean_clouds = df.scores %>% filter(dt %like% format(Sys.Date(),"%A")) %>% dplyr:
 best_hours = df.scores %>% filter(dt %like% format(Sys.Date(),"%A")) %>% dplyr::mutate(dt=paste0(dt)) %>% filter(dt %like% paste(glue("{str_pad(seq(6,20),side = 'left',pad = '0',width=2)}:00"),collapse="|")) %>% dplyr::summarize(dt=dt,score=temp_score+uvi_score+clouds_score+wind_gust_score+pop_score) %>% top_n(wt = score,n = 1) %>% pull(dt)
 msg_forecast = glue("Forecast:\nUVI: {scales::number(max_uv,accuracy=0.1)}, High: {scales::number(max_temp,accuracy=0.1)}, Low: {scales::number(min_temp,accuracy=0.1)}\nPoP: {scales::number(mean_pop,accuracy=0.1)}, Clouds: {scales::number(mean_clouds,accuracy=0.1)}\nWind: {scales::number(mean_wind,accuracy=0.1)}, Windgust: {scales::number(mean_windgust,accuracy=0.1)}\nBest Hour: {best_hours}")
 
-msg_ = glue("Dawn: {sunrise_dawn}\nSunrise: {sunrise} ({gain_sunrise})\nSunset: {sunset} ({gain_sunset})\nDusk: {sunset_dusk}\nTotal gain: {total_gain}\n\n{msg_bike}\n{msg_bikehome}\n\n{msg_forecast}")
+msg_ = glue("Dawn: {sunrise_dawn} ({gain_dawn})\nSunrise: {sunrise} ({gain_sunrise})\nSunset: {sunset} ({gain_sunset})\nDusk: {sunset_dusk} ({gain_dusk})\nTotal gain: {total_gain}\n\n{msg_bike}\n{msg_bikehome}\n\n{msg_forecast}")
 
+msg_daylight_= glue("Dawn: {sunrise_dawn} ({gain_dawn})\nSunrise: {sunrise} ({gain_sunrise})\nSunset: {sunset} ({gain_sunset})\nDusk: {sunset_dusk} ({gain_dusk})\nTotal gain: {total_gain}")
 ```
 
 ## Next 3 Months
@@ -481,6 +502,53 @@ ggplot(df.dates.next_3_months,aes(x=date,y = EventTime)) +
   labs(x=NULL,y=NULL)
 
 ```
+
+
+## Next 3 Months
+
+```{r}
+
+seq_whole_year = seq.Date(from = dmy(paste0("01-01-",year(Sys.Date()))),
+                             to = dmy(paste0("31-12-",year(Sys.Date()))),by = "days")
+
+### Next Week
+df.dates.next_3_months =
+  suncalc::getSunlightTimes(date = seq_whole_year,
+                            lat = 56.1572,
+                            lon = 10.2107,
+                            tz = "CET",
+                            keep = c("sunrise", 
+                                     "sunset", 
+                                     "dawn", 
+                                     "dusk")) %>% 
+  gather(EventName,EventTime,sunrise:dusk) %>% 
+  group_by(date) %>% 
+  dplyr::mutate(EventTime=as.numeric(difftime(EventTime,ymd_hms(paste0(date," 00:00:00"),tz = "Europe/Copenhagen"),units = "hours")))
+
+df.dates_today = df.dates.next_3_months %>% filter(date==Sys.Date())
+
+min_time = min(df.dates.next_3_months$EventTime,na.rm = T)
+min_time = floor( min_time )
+
+max_time = max(df.dates.next_3_months$EventTime,na.rm = T)
+max_time = ceiling( max_time )
+
+seq(min_time,max_time)
+
+p_daylight = ggplot(df.dates.next_3_months,aes(x=date,y = EventTime)) +
+  geom_line(aes(color=EventName)) +
+  theme_bw() +
+  scale_x_date(date_breaks = "7 days",date_labels = "%d %b") +
+  theme(legend.position = "bottom") +
+  geom_vline(xintercept = Sys.Date()) +
+  geom_point(data=df.dates_today,aes(x=date,y=EventTime,color=EventName),shape=4,size=6) +
+  scale_y_continuous(breaks = seq(min_time,max_time),labels = paste0(seq(min_time,max_time) %% 24,":00")) +
+  scale_x_date(date_breaks = "1 month",date_labels = "%b") +
+  labs(x=NULL,y=NULL) +
+  geom_label(x=dmy("01-07-2024"),y=13,label=msg_daylight_)
+
+```
+
 
 ## 2023
 
@@ -588,11 +656,11 @@ ggplot(df.dates,aes(x=date,y = DailyChange)) +
 ```{r}
 
 tmp_dir = tempdir()
-# ggsave(filename = paste0(tmp_dir,"/sunlight.jpg"),plot = p_comingweek,device = "jpeg")
+ggsave(filename = paste0(tmp_dir,"/sunlight.jpg"),plot = p_daylight,device = "jpeg")
 ggsave(filename = paste0(tmp_dir,"/forecast.jpg"),plot = todays_forecast,device = "jpeg")
 ggsave(filename = paste0(tmp_dir,"/beach_forecast.jpg"),plot = todays_beach_forecast,device = "jpeg")
 
-# pushoverr::pushover("Sunlight",attachment = paste0(tmp_dir,"/sunlight.jpg"))
+pushoverr::pushover("Sunlight",attachment = paste0(tmp_dir,"/sunlight.jpg"))
 pushoverr::pushover("Today's Forecast",attachment = paste0(tmp_dir,"/forecast.jpg"))
 # pushoverr::pushover("Today's Beach Forecast",attachment = paste0(tmp_dir,"/beach_forecast.jpg"))
 pushoverr::pushover(msg_)
