@@ -20,6 +20,7 @@ pacman::p_load(pushoverr,
                lubridate,
                scales,
                httr,
+               jsonlite,
                ggplot2,
                suncalc,
                glue,
@@ -31,11 +32,42 @@ pacman::p_load(pushoverr,
 
 
 ```{r warning=FALSE,message=FALSE,include=FALSE}
-readRenviron(path = "Renviron.site")
-OPENWEATHERMAP_APIKEY = Sys.getenv("OPENWEATHERMAP_APIKEY")
-pushoverr::set_pushover_app(token = Sys.getenv("PUSHOVER_APPKEY"))
-pushoverr::set_pushover_user(user = Sys.getenv("PUSHOVER_USERKEY"))
+if (file.exists("Renviron.site")) {
+  readRenviron(path = "Renviron.site")
+}
 
+OPENWEATHERMAP_APIKEY = Sys.getenv("OPENWEATHERMAP_APIKEY")
+PUSHOVER_APPKEY = Sys.getenv("PUSHOVER_APPKEY")
+PUSHOVER_USERKEY = Sys.getenv("PUSHOVER_USERKEY")
+
+required_env_vars = c(
+  OPENWEATHERMAP_APIKEY = OPENWEATHERMAP_APIKEY,
+  PUSHOVER_APPKEY = PUSHOVER_APPKEY,
+  PUSHOVER_USERKEY = PUSHOVER_USERKEY
+)
+
+missing_env_vars = names(required_env_vars)[trimws(required_env_vars) == ""]
+if (length(missing_env_vars) > 0) {
+  stop(glue("Missing required environment variable(s): {paste(missing_env_vars, collapse = ', ')}"), call. = FALSE)
+}
+
+pushoverr::set_pushover_app(token = PUSHOVER_APPKEY)
+pushoverr::set_pushover_user(user = PUSHOVER_USERKEY)
+
+```
+
+```{r}
+weather_config = list(
+  locations = list(
+    primary = list(lat = 55.771979, lon = 12.494786),
+    primary_suncalc = list(lat = 55.7715024, lon = 12.4932282),
+    aarhus = list(lat = 56.1572, lon = 10.2107)
+  ),
+  timezones = list(
+    openweather = "Europe/Copenhagen",
+    suncalc = "CET"
+  )
+)
 ```
 
 ```{r eval=F}
@@ -45,7 +77,7 @@ pushoverr::pushover("Hello world")
 
 ```{r}
 convert_timestamp = function(timestamp) {
-  return( as.POSIXct( timestamp ,tz = "Europe/Copenhagen",origin="1970-01-01") )
+  return( as.POSIXct( timestamp ,tz = weather_config$timezones$openweather,origin="1970-01-01") )
 }
 ```
 
@@ -74,15 +106,45 @@ convert_kelvin= function(kelvin) {
 }
 ```
 
+```{r}
+fetch_openweather_onecall = function(lat, lon, api_key) {
+  response = httr::GET(
+    url = "https://api.openweathermap.org/data/3.0/onecall",
+    query = list(lat = lat, lon = lon, appid = api_key),
+    httr::timeout(15)
+  )
+
+  response_status = httr::status_code(response)
+  if (response_status != 200) {
+    response_body = httr::content(response, as = "text", encoding = "UTF-8")
+    stop(glue("OpenWeather API request failed with status {response_status}: {response_body}"), call. = FALSE)
+  }
+
+  response_text = httr::content(response, as = "text", encoding = "UTF-8")
+  parsed_response = tryCatch(
+    jsonlite::fromJSON(response_text),
+    error = function(e) {
+      stop(glue("Failed to parse OpenWeather API JSON response: {conditionMessage(e)}"), call. = FALSE)
+    }
+  )
+
+  required_fields = c("current", "daily", "hourly", "minutely")
+  missing_fields = setdiff(required_fields, names(parsed_response))
+  if (length(missing_fields) > 0) {
+    stop(glue("OpenWeather API response missing required field(s): {paste(missing_fields, collapse = ', ')}"), call. = FALSE)
+  }
+
+  return(parsed_response)
+}
+```
+
 
 ```{r include=TRUE}
 
-lat = 55.771979
-lon = 12.494786
+lat = weather_config$locations$primary$lat
+lon = weather_config$locations$primary$lon
 
-res = GET(paste0("https://api.openweathermap.org/data/3.0/onecall?lat=",lat,"&lon=",lon,"&appid=",OPENWEATHERMAP_APIKEY)) # Yeah, should really hide that api key.
-
-res_json = jsonlite::fromJSON( rawToChar( res$content ) )
+res_json = fetch_openweather_onecall(lat = lat, lon = lon, api_key = OPENWEATHERMAP_APIKEY)
 
 res_json_current = res_json$current
 res_json_daily = res_json$daily
@@ -146,7 +208,7 @@ rescale_capped = function(values,from) {
 ```{r}
 
 df.scores = res_json_hourly %>% 
-  filter(dt<=ymd_hms(paste0(Sys.Date()," 00:00:00"),tz = "Europe/Copenhagen")+days(1)) %>% 
+  filter(dt<=ymd_hms(paste0(Sys.Date()," 00:00:00"),tz = weather_config$timezones$openweather)+days(1)) %>% 
   dplyr::mutate(dt=format(dt,"%H:%M"),
                 pop=pop*100) 
 
@@ -155,13 +217,13 @@ if ( !is.null(res_json_hourly$rain) ) {
   dplyr::select(dt,rain) %>% 
   unnest(rain) %>% 
   replace_na(list(`1h`=0)) %>% 
-  filter(dt<=ymd_hms(paste0(Sys.Date()," 00:00:00"),tz = "Europe/Copenhagen")+days(1)) %>% 
+  filter(dt<=ymd_hms(paste0(Sys.Date()," 00:00:00"),tz = weather_config$timezones$openweather)+days(1)) %>% 
   dplyr::mutate(dt=format(dt,"%H:%M")) %>% 
   setNames(.,c("dt","rainmm"))
 } else {
   df.scores_rain = res_json_hourly %>% 
   dplyr::select(dt) %>% 
-  filter(dt<=ymd_hms(paste0(Sys.Date()," 00:00:00"),tz = "Europe/Copenhagen")+days(1)) %>% 
+  filter(dt<=ymd_hms(paste0(Sys.Date()," 00:00:00"),tz = weather_config$timezones$openweather)+days(1)) %>% 
   dplyr::mutate(dt=format(dt,"%H:%M"),
                 rainmm=0)
 }
@@ -293,8 +355,8 @@ draw_scorecard(factors)
 # SunCalc
 
 ```{r}
-current_dt = as.POSIXct(format(Sys.time()),tz="CET")
-current_date = as.Date(Sys.Date(),tz="CET")
+current_dt = as.POSIXct(format(Sys.time()),tz=weather_config$timezones$suncalc)
+current_date = as.Date(Sys.Date(),tz=weather_config$timezones$suncalc)
 dates_in_thisyear = seq.Date(from = floor_date(Sys.Date(),unit = "year"),to = ceiling_date(Sys.Date(),unit = "year"),by = "1 day")
 ```
 
@@ -325,9 +387,9 @@ event_order.labels = c("Dawn",
                 "Night")
 ### Next Week
 df.dates.next_week = suncalc::getSunlightTimes(date = seq_next_14,
-                            lat = 55.7715024,
-                            lon = 12.4932282,
-                            tz = "CET",
+                            lat = weather_config$locations$primary_suncalc$lat,
+                            lon = weather_config$locations$primary_suncalc$lon,
+                            tz = weather_config$timezones$suncalc,
                             keep = event_order) %>% 
   gather(EventName,EventTime,dawn:night) %>% 
   dplyr::mutate(EventName=factor(EventName,levels=event_order,labels=event_order.labels))
@@ -465,9 +527,9 @@ seq_next_3_months = seq.Date(from = Sys.Date(),to = Sys.Date()+90,by = "days")
 ### Next Week
 df.dates.next_3_months =
   suncalc::getSunlightTimes(date = seq_next_3_months,
-                            lat = 56.1572,
-                            lon = 10.2107,
-                            tz = "CET",
+                            lat = weather_config$locations$aarhus$lat,
+                            lon = weather_config$locations$aarhus$lon,
+                            tz = weather_config$timezones$suncalc,
                             keep = c("solarNoon", 
                                      "sunrise", 
                                      "sunset", 
@@ -482,7 +544,7 @@ df.dates.next_3_months =
                                      "goldenHour")) %>% 
   gather(EventName,EventTime,solarNoon:goldenHour) %>% 
   group_by(date) %>% 
-  dplyr::mutate(EventTime=as.numeric(difftime(EventTime,ymd_hms(paste0(date," 00:00:00"),tz = "Europe/Copenhagen"),units = "hours")))
+  dplyr::mutate(EventTime=as.numeric(difftime(EventTime,ymd_hms(paste0(date," 00:00:00"),tz = weather_config$timezones$openweather),units = "hours")))
 
 min_time = min(df.dates.next_3_months$EventTime,na.rm = T)
 min_time = floor( min_time )
@@ -514,16 +576,16 @@ seq_whole_year = seq.Date(from = dmy(paste0("01-01-",year(Sys.Date()))),
 ### Next Week
 df.dates.next_3_months =
   suncalc::getSunlightTimes(date = seq_whole_year,
-                            lat = 56.1572,
-                            lon = 10.2107,
-                            tz = "CET",
+                            lat = weather_config$locations$aarhus$lat,
+                            lon = weather_config$locations$aarhus$lon,
+                            tz = weather_config$timezones$suncalc,
                             keep = c("sunrise", 
                                      "sunset", 
                                      "dawn", 
                                      "dusk")) %>% 
   gather(EventName,EventTime,sunrise:dusk) %>% 
   group_by(date) %>% 
-  dplyr::mutate(EventTime=as.numeric(difftime(EventTime,ymd_hms(paste0(date," 00:00:00"),tz = "Europe/Copenhagen"),units = "hours")))
+  dplyr::mutate(EventTime=as.numeric(difftime(EventTime,ymd_hms(paste0(date," 00:00:00"),tz = weather_config$timezones$openweather),units = "hours")))
 
 df.dates_today = df.dates.next_3_months %>% filter(date==Sys.Date())
 
@@ -558,7 +620,7 @@ df.dates_2021 =
   suncalc::getSunlightTimes(date = dates_in_thisyear,
                             lat = lat,
                             lon = lon,
-                            tz = "CET",
+                            tz = weather_config$timezones$suncalc,
                             keep = c("solarNoon", 
                                      "sunrise", 
                                      "sunset", 
@@ -573,7 +635,7 @@ df.dates_2021 =
                                      "goldenHour")) %>% 
   gather(EventName,EventTime,solarNoon:goldenHour) %>% 
   group_by(date) %>%
-  dplyr::mutate(EventTime=as.numeric(difftime(EventTime,ymd_hms(paste0(date," 00:00:00"),tz = "Europe/Copenhagen"),units = "hours")))
+  dplyr::mutate(EventTime=as.numeric(difftime(EventTime,ymd_hms(paste0(date," 00:00:00"),tz = weather_config$timezones$openweather),units = "hours")))
 
 # min_time = min(dates_in_thisyear$EventTime,na.rm = T)
 # min_time = floor( min_time )
@@ -603,7 +665,7 @@ df.dates =
   suncalc::getSunlightTimes(date = dates_in_thisyear,
                             lat = lat,
                             lon = lon,
-                            tz = "CET",
+                            tz = weather_config$timezones$suncalc,
                             keep = c("solarNoon", 
                                      "sunrise", 
                                      "sunset", 
@@ -624,9 +686,9 @@ df.dates =
   dplyr::mutate(StartTime=ifelse(StartTime==min(EventTime),StartTime,NA)) %>% 
   tidyr::fill(StartTime) %>% 
   group_by(EventName) %>% 
-  dplyr::mutate(StartTime=as.POSIXct(StartTime,origin="1970-01-01"),tz="CET") %>% 
-  dplyr::mutate(StartTime=ymd_hms(paste0(year(EventTime),"-",month(EventTime),"-",day(EventTime)," ",hour(StartTime),":",minute(StartTime),":",second(StartTime)),tz="CET")) %>% 
-  dplyr::mutate(EventTime=as.POSIXct(EventTime,tz="CET")) %>% 
+  dplyr::mutate(StartTime=as.POSIXct(StartTime,origin="1970-01-01"),tz=weather_config$timezones$suncalc) %>% 
+  dplyr::mutate(StartTime=ymd_hms(paste0(year(EventTime),"-",month(EventTime),"-",day(EventTime)," ",hour(StartTime),":",minute(StartTime),":",second(StartTime)),tz=weather_config$timezones$suncalc)) %>% 
+  dplyr::mutate(EventTime=as.POSIXct(EventTime,tz=weather_config$timezones$suncalc)) %>% 
 dplyr::mutate(MinutesChanged=round(as.numeric(difftime(EventTime,StartTime,units="mins")),digits=2)) %>% 
   dplyr::mutate(DailyChange=MinutesChanged-lag(MinutesChanged))
 
@@ -665,4 +727,3 @@ pushoverr::pushover("Today's Forecast",attachment = paste0(tmp_dir,"/forecast.jp
 # pushoverr::pushover("Today's Beach Forecast",attachment = paste0(tmp_dir,"/beach_forecast.jpg"))
 pushoverr::pushover(msg_)
 ```
-
