@@ -15,5 +15,12 @@ response <- httr::POST(
   body = list(token = Sys.getenv("PUSHOVER_APPKEY"), user = Sys.getenv("PUSHOVER_USERKEY"), title = "Weather forecast", message = message),
   encode = "form", httr::timeout(20)
 )
-if (httr::status_code(response) != 200) stop(sprintf("Pushover request failed (%s).", httr::status_code(response)), call. = FALSE)
+if (httr::status_code(response) != 200) {
+  response_body <- tryCatch(
+    jsonlite::fromJSON(httr::content(response, as = "text", encoding = "UTF-8"), simplifyVector = TRUE),
+    error = function(e) list()
+  )
+  api_errors <- response_body$errors %||% response_body$error %||% "No diagnostic details returned."
+  stop(sprintf("Pushover request failed (%s): %s", httr::status_code(response), paste(api_errors, collapse = "; ")), call. = FALSE)
+}
 message("Daily weather notification sent.")
