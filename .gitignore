@@ -5,3 +5,8 @@
 Renviron.site
 .Renviron
 .env
+.env.*
+*.pem
+*.key
+credentials*.json
+secrets*.json

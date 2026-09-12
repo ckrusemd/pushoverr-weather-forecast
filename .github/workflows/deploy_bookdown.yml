@@ -10,6 +10,9 @@ on:
 
 name: pushoverr-weather-example
 
+permissions:
+  contents: read
+
 jobs:
   schedule-gate:
     runs-on: ubuntu-latest
@@ -36,15 +39,21 @@ jobs:
     #runs-on: macOS-latest
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Renviron
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Validate required secrets
+        env:
+          PUSHOVER_APPKEY: ${{ secrets.PUSHOVER_APPKEY }}
+          PUSHOVER_USERKEY: ${{ secrets.PUSHOVER_USERKEY }}
+          OPENWEATHERMAP_APIKEY: ${{ secrets.OPENWEATHERMAP_APIKEY }}
         run: |
-          cat <<'EOF' >> Renviron.site
-          PUSHOVER_APPKEY=${{ secrets.PUSHOVER_APPKEY }}
-          PUSHOVER_USERKEY=${{ secrets.PUSHOVER_USERKEY }}
-          OPENWEATHERMAP_APIKEY=${{ secrets.OPENWEATHERMAP_APIKEY }}
-          EOF
+          test -n "$PUSHOVER_APPKEY"
+          test -n "$PUSHOVER_USERKEY"
+          test -n "$OPENWEATHERMAP_APIKEY"
       - name: Render Book from Action
-        uses: ckrusemd/rmarkdown-action@v0.21
+        uses: ckrusemd/rmarkdown-action@ea75a8a3da2717e9a5034466a600424d3e2f90c0 # v0.21
+        env:
+          PUSHOVER_APPKEY: ${{ secrets.PUSHOVER_APPKEY }}
+          PUSHOVER_USERKEY: ${{ secrets.PUSHOVER_USERKEY }}
+          OPENWEATHERMAP_APIKEY: ${{ secrets.OPENWEATHERMAP_APIKEY }}
         with:
            input_file: index.Rmd
