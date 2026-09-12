@@ -10,6 +10,8 @@ on:
         type: boolean
   push:
     branches: [master]
+  pull_request:
+    branches: [master]
   schedule:
     # 05:00 Europe/Copenhagen: both UTC candidates are gated below for CET/CEST.
     - cron: "0 3 * * *"
@@ -88,6 +90,7 @@ jobs:
 
   deploy:
     needs: build
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       pages: write
