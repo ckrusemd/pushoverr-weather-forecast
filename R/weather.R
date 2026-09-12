@@ -36,7 +36,7 @@ as_local_time <- function(seconds, tz = weather_config$timezone) as.POSIXct(seco
 hourly_frame <- function(payload, tz = weather_config$timezone) {
   rows <- lapply(payload$hourly, function(x) data.frame(
     time = as_local_time(x$dt, tz), temp = x$temp, feels_like = x$feels_like,
-    pop = (x$pop %||% 0) * 100, wind_speed = x$wind_speed, clouds = x$clouds,
+    pop = (x$pop %||% 0) * 100, uv_index = x$uvi %||% NA_real_, wind_speed = x$wind_speed, clouds = x$clouds,
     description = weather_description(x$weather), stringsAsFactors = FALSE
   ))
   do.call(rbind, rows)
@@ -66,13 +66,17 @@ best_outdoor_hour <- function(hourly) {
 }
 
 notification_text <- function(payload, config = weather_config) {
-  current <- payload$current
   daily <- daily_frame(payload, config$timezone)[1, , drop = FALSE]
-  best <- best_outdoor_hour(hourly_frame(payload, config$timezone))
+  hourly <- hourly_frame(payload, config$timezone)
+  today <- hourly[as.Date(hourly$time) == daily$date, , drop = FALSE]
+  if (!nrow(today)) today <- hourly
+  at_eight <- today[which.min(abs(as.numeric(difftime(today$time, as.POSIXct(paste(daily$date, "08:00:00"), tz = config$timezone), units = "secs")))), , drop = FALSE]
+  peak_pop <- today[which.max(today$pop), , drop = FALSE]
+  peak_uv <- today[which.max(ifelse(is.na(today$uv_index), -Inf, today$uv_index)), , drop = FALSE]
   sprintf(
-    "%s today\n%s, now %.0f°C (feels %.0f°C)\nHigh/low %.0f/%.0f°C · rain %.0f%% · wind %.0f m/s\nBest outside: %s · sunrise %s · sunset %s",
-    config$location_name, weather_description(current$weather), current$temp, current$feels_like,
-    daily$max_temp, daily$min_temp, daily$pop, daily$wind_speed,
-    format(best$time, "%H:%M"), format(daily$sunrise, "%H:%M"), format(daily$sunset, "%H:%M")
+    "Weather at 08:00: %s, %.0f°C (feels %.0f°C)\nToday's high: %.0f°C\nPoP: %.0f%% at %s\nUV index tops at: %.1f at %s\nCloud cover: %.0f%%\nSunrise: %s\nSunset: %s",
+    at_eight$description, at_eight$temp, at_eight$feels_like,
+    daily$max_temp, peak_pop$pop, format(peak_pop$time, "%H:%M"), peak_uv$uv_index, format(peak_uv$time, "%H:%M"),
+    at_eight$clouds, format(daily$sunrise, "%H:%M"), format(daily$sunset, "%H:%M")
   )
 }
