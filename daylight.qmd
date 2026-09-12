@@ -1,0 +1,20 @@
+---
+title: "Daylight"
+---
+
+```{r}
+source("R/weather.R")
+payload <- fetch_weather()
+daily <- daily_frame(payload)
+daily$daylight_hours <- as.numeric(difftime(daily$sunset, daily$sunrise, units = "hours"))
+```
+
+## Light for the week ahead
+
+```{r}
+library(ggplot2)
+ggplot(daily, aes(date, daylight_hours)) + geom_col(fill = "#fbbf24") +
+  labs(x = NULL, y = "Hours between sunrise and sunset") + theme_minimal(base_size = 12)
+```
+
+The original detailed sun and seasonal analysis remains preserved in `weather_pushoverr.Rmd` while this Quarto view becomes the published, daily dashboard.

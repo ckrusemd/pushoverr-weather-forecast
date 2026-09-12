@@ -10,3 +10,4 @@ Renviron.site
 *.key
 credentials*.json
 secrets*.json
+_site/
