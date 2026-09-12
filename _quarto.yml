@@ -1,6 +1,10 @@
 project:
   type: website
   output-dir: _site
+  render:
+    - index.qmd
+    - forecast.qmd
+    - daylight.qmd
 
 website:
   title: "Weather Console"
