@@ -50,7 +50,7 @@ jobs:
           test -n "$PUSHOVER_USERKEY"
           test -n "$OPENWEATHERMAP_APIKEY"
       - name: Render Book from Action
-        uses: ckrusemd/rmarkdown-action@ea75a8a3da2717e9a5034466a600424d3e2f90c0 # v0.21
+        uses: ckrusemd/rmarkdown-action@96c3cca0304bca8d7efc183eaa12415bb87980a7 # v1.1
         env:
           PUSHOVER_APPKEY: ${{ secrets.PUSHOVER_APPKEY }}
           PUSHOVER_USERKEY: ${{ secrets.PUSHOVER_USERKEY }}
