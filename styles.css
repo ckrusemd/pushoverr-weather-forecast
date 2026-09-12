@@ -1,0 +1,9 @@
+:root { --accent: #6ee7ff; --panel: #172033; --ink: #e6edf8; }
+body { background: #090d16; color: var(--ink); }
+.hero { padding: 2.5rem; margin: 1rem 0 2rem; border: 1px solid #273752; border-radius: 1rem; background: radial-gradient(circle at top right, #1e3a5f, #111827 60%); }
+.hero h1 { margin: 0 0 .4rem; color: #fff; }
+.grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; margin: 1.5rem 0 2.5rem; }
+.metric { padding: 1.25rem; min-height: 9rem; border: 1px solid #273752; border-radius: .9rem; background: var(--panel); font-size: 1.25rem; }
+.metric h2 { font-size: .85rem; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+@media (max-width: 800px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 460px) { .grid { grid-template-columns: 1fr; } .hero { padding: 1.5rem; } }

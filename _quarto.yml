@@ -1,0 +1,33 @@
+project:
+  type: website
+  output-dir: _site
+  render:
+    - index.qmd
+    - forecast.qmd
+    - daylight.qmd
+
+website:
+  title: "Weather Console"
+  navbar:
+    left:
+      - href: index.qmd
+        text: Today
+      - href: forecast.qmd
+        text: Forecast
+      - href: daylight.qmd
+        text: Daylight
+  page-footer:
+    left: "Weather Console · Copenhagen"
+    right: "Data: OpenWeather"
+
+format:
+  html:
+    theme: darkly
+    css: styles.css
+    toc: true
+    smooth-scroll: true
+
+execute:
+  echo: false
+  warning: false
+  message: false

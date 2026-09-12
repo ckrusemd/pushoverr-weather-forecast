@@ -1,0 +1,29 @@
+---
+title: "Forecast analysis"
+---
+
+```{r}
+source("R/weather.R")
+payload <- fetch_weather()
+hourly <- hourly_frame(payload)
+daily <- daily_frame(payload)
+hourly$score <- outdoor_score(hourly)
+```
+
+## Outdoor conditions
+
+The score favours temperatures around 20°C, lower rain risk and lighter winds. It is an aid to planning, not a weather warning.
+
+```{r}
+library(ggplot2)
+ggplot(head(hourly, 48), aes(time, score)) +
+  geom_area(fill = "#22d3ee", alpha = .28) + geom_line(colour = "#67e8f9", linewidth = 1) +
+  ylim(0, 100) + labs(x = NULL, y = "Outdoor score") + theme_minimal(base_size = 12)
+```
+
+## Seven-day outlook
+
+```{r}
+knitr::kable(transform(daily, sunrise = format(sunrise, "%H:%M"), sunset = format(sunset, "%H:%M")), digits = 1,
+  col.names = c("Date", "Sunrise", "Sunset", "Low °C", "High °C", "Rain %", "Wind m/s", "Conditions"))
+```

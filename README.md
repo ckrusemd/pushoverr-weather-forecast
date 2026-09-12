@@ -1,20 +1,20 @@
-# Pushoverr Weather Forecast
+# Weather Console
 
-An automated weather forecast system built with R that fetches weather data from the [OpenWeatherMap API](https://openweathermap.org/api) and sends daily push notifications via [Pushover](https://pushover.net/) using the [`pushoverr`](https://github.com/briandconnelly/pushoverr) R package.
+A dark, responsive [Quarto](https://quarto.org/) weather dashboard for Copenhagen. It fetches live [OpenWeatherMap](https://openweathermap.org/api) data, publishes to GitHub Pages, and sends one concise daily forecast through [Pushover](https://pushover.net/).
 
 ## Features
 
 - **Weather Forecasts**: Hourly and daily weather data via OpenWeatherMap One Call API 3.0
-- **Push Notifications**: Automated forecast summaries sent to your phone via Pushover
-- **Sun Tracking**: Sunrise, sunset, dawn, dusk and other solar events via [`suncalc`](https://github.com/datastorm-open/suncalc)
-- **Automated Scheduling**: GitHub Actions workflow runs twice daily on a cron schedule
-- **Bookdown Report**: Renders as an HTML bookdown site with weather charts and scorecards
+- **Dashboard**: Current conditions, outdoor score, 48-hour forecast, seven-day outlook and daylight view
+- **One daily notification**: A compact forecast at 05:00 Europe/Copenhagen, including temperatures, rain, wind, best outdoor hour and sunrise/sunset
+- **GitHub Pages**: The site is rebuilt on pushes and each scheduled daily run
+- **Preserved analysis**: The former detailed report remains in `weather_pushoverr.Rmd` as a historical source during the Quarto migration
 
 ## Setup
 
 ### Prerequisites
 
-- R (with [`pacman`](https://github.com/trinker/pacman) for package management)
+- R 4.2+ and Quarto
 - API keys for:
   - [OpenWeatherMap](https://openweathermap.org/api) (One Call API 3.0)
   - [Pushover](https://pushover.net/) (App key + User key)
@@ -35,13 +35,13 @@ The workflow uses GitHub repository secrets for the three API keys above. Config
 
 ## Usage
 
-Render the bookdown report locally:
+Render the dashboard locally (with `OPENWEATHERMAP_APIKEY` set):
 
-```r
-bookdown::render_book("index.Rmd")
+```bash
+quarto render
 ```
 
-Or push to the `master` branch to trigger the GitHub Actions workflow automatically.
+The GitHub Actions workflow needs `OPENWEATHERMAP_APIKEY`, `PUSHOVER_USERKEY`, and `PUSHOVER_APPKEY` stored as repository secrets. It never writes secrets to files or the published site. A manual workflow run can optionally send the notification; ordinary pushes only publish the site.
 
 ## License
 

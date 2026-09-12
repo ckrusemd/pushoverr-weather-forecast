@@ -1,0 +1,59 @@
+---
+title: "Today at a glance"
+---
+
+```{r}
+source("R/weather.R")
+payload <- fetch_weather()
+current <- payload$current
+daily <- daily_frame(payload)[1, ]
+hourly <- hourly_frame(payload)
+best <- best_outdoor_hour(hourly)
+```
+
+::: {.hero}
+# Copenhagen weather
+
+`r weather_description(current$weather)` · Updated `r format(as_local_time(current$dt), "%H:%M")`
+:::
+
+::: {.grid}
+::: {.metric}
+## Now
+`r sprintf("%.0f°C", current$temp)`
+
+Feels like `r sprintf("%.0f°C", current$feels_like)`
+:::
+::: {.metric}
+## Today
+`r sprintf("%.0f / %.0f°C", daily$max_temp, daily$min_temp)`
+
+High / low
+:::
+::: {.metric}
+## Rain chance
+`r sprintf("%.0f%%", daily$pop)`
+
+Wind `r sprintf("%.0f m/s", daily$wind_speed)`
+:::
+::: {.metric}
+## Best outside
+`r format(best$time, "%H:%M")`
+
+Score `r round(best$score)` / 100
+:::
+:::
+
+## The next 24 hours
+
+```{r}
+library(ggplot2)
+ggplot(head(hourly, 24), aes(time, temp)) +
+  geom_line(linewidth = 1.1, colour = "#6ee7ff") +
+  geom_point(aes(colour = pop), size = 2.5) +
+  scale_colour_gradient(low = "#a7f3d0", high = "#60a5fa", name = "Rain chance %") +
+  labs(x = NULL, y = "Temperature °C") +
+  theme_minimal(base_size = 12)
+```
+
+Sunrise `r format(daily$sunrise, "%H:%M")` · Sunset `r format(daily$sunset, "%H:%M")`
