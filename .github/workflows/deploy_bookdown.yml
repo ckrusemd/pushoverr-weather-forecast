@@ -1,15 +1,38 @@
 on:
+  workflow_dispatch:
   push:
      branches:
        - master
   schedule:
-    - cron:  '1 3,13 * * *'
+    # GitHub cron is UTC: 03:00 UTC during CEST and 04:00 UTC during CET.
+    - cron:  '0 3 * * *'
+    - cron:  '0 4 * * *'
 
 name: pushoverr-weather-example
 
 jobs:
+  schedule-gate:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
+    steps:
+      - name: Check Copenhagen schedule
+        id: gate
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif { [ "${{ github.event.schedule }}" = "0 3 * * *" ] && [ "$(TZ=Europe/Copenhagen date +%Z)" = "CEST" ]; } || \
+               { [ "${{ github.event.schedule }}" = "0 4 * * *" ] && [ "$(TZ=Europe/Copenhagen date +%Z)" = "CET" ]; }; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
   bookdown:
     name: pushoverr
+    needs: schedule-gate
+    if: needs.schedule-gate.outputs.run == 'true'
     #runs-on: macOS-latest
     runs-on: ubuntu-latest
     steps:
