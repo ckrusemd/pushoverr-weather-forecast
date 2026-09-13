@@ -37,6 +37,7 @@ hourly_frame <- function(payload, tz = weather_config$timezone) {
   rows <- lapply(payload$hourly, function(x) data.frame(
     time = as_local_time(x$dt, tz), temp = x$temp, feels_like = x$feels_like,
     pop = (x$pop %||% 0) * 100, uv_index = x$uvi %||% NA_real_, wind_speed = x$wind_speed, clouds = x$clouds,
+    humidity = x$humidity %||% NA_real_, rain_mm = if (is.null(x$rain)) 0 else (x$rain$`1h` %||% 0),
     description = weather_description(x$weather), stringsAsFactors = FALSE
   ))
   do.call(rbind, rows)
@@ -58,6 +59,25 @@ outdoor_score <- function(hourly) {
   pmax(0, pmin(100, 100 - abs(hourly$temp - 20) * 4 - hourly$pop * 0.55 - pmax(hourly$wind_speed - 3, 0) * 7 - hourly$clouds * 0.08))
 }
 
+relative_humidity_at <- function(temperature_c, relative_humidity, reference_c = 21) {
+  # Infer dew point from the forecast RH, then calculate RH if the air is warmed
+  # or cooled to the requested reference temperature.
+  valid <- is.finite(temperature_c) & is.finite(relative_humidity) & relative_humidity > 0
+  result <- rep(NA_real_, length(temperature_c))
+  gamma <- log(relative_humidity[valid] / 100) + (17.625 * temperature_c[valid]) / (243.04 + temperature_c[valid])
+  dew_point <- 243.04 * gamma / (17.625 - gamma)
+  result[valid] <- 100 * exp((17.625 * dew_point) / (243.04 + dew_point) - (17.625 * reference_c) / (243.04 + reference_c))
+  pmin(100, pmax(0, result))
+}
+
+connected_hour_ranges <- function(hours) {
+  hours <- sort(unique(as.integer(hours)))
+  if (!length(hours)) return("none")
+  groups <- cumsum(c(TRUE, diff(hours) != 1))
+  pieces <- split(hours, groups)
+  paste(vapply(pieces, function(x) if (length(x) == 1) as.character(x) else sprintf("%d-%d", min(x), max(x)), character(1)), collapse = ", ")
+}
+
 best_outdoor_hour <- function(hourly) {
   today <- hourly[as.Date(hourly$time) == as.Date(Sys.time(), tz = weather_config$timezone), , drop = FALSE]
   if (!nrow(today)) today <- hourly
@@ -73,10 +93,13 @@ notification_text <- function(payload, config = weather_config) {
   at_eight <- today[which.min(abs(as.numeric(difftime(today$time, as.POSIXct(paste(daily$date, "08:00:00"), tz = config$timezone), units = "secs")))), , drop = FALSE]
   peak_pop <- today[which.max(today$pop), , drop = FALSE]
   peak_uv <- today[which.max(ifelse(is.na(today$uv_index), -Inf, today$uv_index)), , drop = FALSE]
+  today$rh_at_21c <- relative_humidity_at(today$temp, today$humidity)
+  dry_hours <- today$rh_at_21c < 60 & as.integer(format(today$time, "%H")) >= 7 & as.integer(format(today$time, "%H")) <= 22
   sprintf(
-    "Weather at 08:00: %s, %.0f°C (feels %.0f°C)\nToday's high: %.0f°C\nPoP: %.0f%% at %s\nUV index tops at: %.1f at %s\nCloud cover: %.0f%%\nSunrise: %s\nSunset: %s",
+    "Weather at 08:00: %s, %.0f°C (feels %.0f°C)\nToday's high: %.0f°C\nPoP: %.0f%% at %s\nUV index tops at: %.1f at %s\nCloud cover: %.0f%%\nSunrise: %s\nSunset: %s\nRH below 60%% at 21°C: %s",
     at_eight$description, at_eight$temp, at_eight$feels_like,
     daily$max_temp, peak_pop$pop, format(peak_pop$time, "%H:%M"), peak_uv$uv_index, format(peak_uv$time, "%H:%M"),
-    at_eight$clouds, format(daily$sunrise, "%H:%M"), format(daily$sunset, "%H:%M")
+    at_eight$clouds, format(daily$sunrise, "%H:%M"), format(daily$sunset, "%H:%M"),
+    connected_hour_ranges(as.integer(format(today$time[dry_hours], "%H")))
   )
 }

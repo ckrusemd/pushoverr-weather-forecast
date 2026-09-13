@@ -27,3 +27,29 @@ ggplot(head(hourly, 48), aes(time, score)) +
 knitr::kable(transform(daily, sunrise = format(sunrise, "%H:%M"), sunset = format(sunset, "%H:%M")), digits = 1,
   col.names = c("Date", "Sunrise", "Sunset", "Low °C", "High °C", "Rain %", "Wind m/s", "Conditions"))
 ```
+
+## Hourly weather heatmap
+
+```{r}
+today_date <- as.Date(Sys.time(), tz = weather_config$timezone)
+heat <- hourly[as.Date(hourly$time) == today_date, , drop = FALSE]
+if (!nrow(heat)) heat <- head(hourly, 24)
+heat <- heat[as.integer(format(heat$time, "%H")) >= 7 & as.integer(format(heat$time, "%H")) <= 22, , drop = FALSE]
+heat_long <- rbind(
+  data.frame(hour = heat$time, variable = "Temperature °C", value = heat$temp),
+  data.frame(hour = heat$time, variable = "PoP %", value = heat$pop),
+  data.frame(hour = heat$time, variable = "Rain mm", value = heat$rain_mm),
+  data.frame(hour = heat$time, variable = "Cloud cover %", value = heat$clouds),
+  data.frame(hour = heat$time, variable = "UV index", value = heat$uv_index),
+  data.frame(hour = heat$time, variable = "Wind m/s", value = heat$wind_speed)
+)
+heat_long$hour_label <- format(heat_long$hour, "%H:%M")
+heat_long$variable <- factor(heat_long$variable, levels = c("Temperature °C", "PoP %", "Rain mm", "Cloud cover %", "UV index", "Wind m/s"))
+ggplot(heat_long, aes(hour_label, variable, fill = value)) +
+  geom_tile(colour = "#0b1220", linewidth = .4) +
+  facet_grid(variable ~ ., scales = "free_y", space = "free_y") +
+  scale_fill_gradient(low = "#102a43", high = "#67e8f9", na.value = "#263449") +
+  labs(x = "Local time", y = NULL, fill = "Value") +
+  theme_minimal(base_size = 11) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), strip.text.y = element_blank(), panel.spacing.y = grid::unit(.25, "lines"))
+```
