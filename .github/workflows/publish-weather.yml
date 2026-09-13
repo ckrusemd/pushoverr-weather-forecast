@@ -45,7 +45,13 @@ jobs:
             fi
           else
             echo "publish=true" >> "$GITHUB_OUTPUT"
-            echo "notify=${{ github.event_name == 'workflow_dispatch' && inputs.send_notification }}" >> "$GITHUB_OUTPUT"
+            if [ "${{ github.event_name }}" = "push" ] || \
+               { [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.event.pull_request.head.repo.full_name }}" = "${{ github.repository }}" ]; } || \
+               { [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.send_notification }}" = "true" ]; }; then
+              echo "notify=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "notify=false" >> "$GITHUB_OUTPUT"
+            fi
           fi
 
   build:

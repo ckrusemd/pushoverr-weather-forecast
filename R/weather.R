@@ -78,6 +78,12 @@ connected_hour_ranges <- function(hours) {
   paste(vapply(pieces, function(x) if (length(x) == 1) as.character(x) else sprintf("%d-%d", min(x), max(x)), character(1)), collapse = ", ")
 }
 
+format_signed_duration <- function(seconds) {
+  sign <- if (seconds >= 0) "+" else "-"
+  total_minutes <- round(abs(seconds) / 60)
+  sprintf("%s%d:%02d", sign, total_minutes %/% 60, total_minutes %% 60)
+}
+
 best_outdoor_hour <- function(hourly) {
   today <- hourly[as.Date(hourly$time) == as.Date(Sys.time(), tz = weather_config$timezone), , drop = FALSE]
   if (!nrow(today)) today <- hourly
@@ -86,7 +92,8 @@ best_outdoor_hour <- function(hourly) {
 }
 
 notification_text <- function(payload, config = weather_config) {
-  daily <- daily_frame(payload, config$timezone)[1, , drop = FALSE]
+  daily_forecast <- daily_frame(payload, config$timezone)
+  daily <- daily_forecast[1, , drop = FALSE]
   hourly <- hourly_frame(payload, config$timezone)
   today <- hourly[as.Date(hourly$time) == daily$date, , drop = FALSE]
   if (!nrow(today)) today <- hourly
@@ -95,11 +102,17 @@ notification_text <- function(payload, config = weather_config) {
   peak_uv <- today[which.max(ifelse(is.na(today$uv_index), -Inf, today$uv_index)), , drop = FALSE]
   today$rh_at_21c <- relative_humidity_at(today$temp, today$humidity)
   dry_hours <- today$rh_at_21c < 60 & as.integer(format(today$time, "%H")) >= 7 & as.integer(format(today$time, "%H")) <= 22
+  sunrise_change <- if (nrow(daily_forecast) >= 2) {
+    format_signed_duration(as.numeric(difftime(daily_forecast$sunrise[2], daily$sunrise, units = "secs")))
+  } else {
+    "n/a"
+  }
+  rain_next_day <- sum(head(hourly$rain_mm, 24), na.rm = TRUE)
   sprintf(
-    "Weather at 08:00: %s, %.0f°C (feels %.0f°C)\nToday's high: %.0f°C\nPoP: %.0f%% at %s\nUV index tops at: %.1f at %s\nCloud cover: %.0f%%\nSunrise: %s\nSunset: %s\nRH below 60%% at 21°C: %s",
+    "Weather at 08:00: %s, %.0f°C (feels %.0f°C)\nToday's high: %.0f°C\nPoP: %.0f%% at %s\nUV index tops at: %.1f at %s\nCloud cover: %.0f%%\nSunrise: %s (%s)\nRain next 24h: %.1f mm\nSunset: %s\nRH below 60%% at 21°C: %s",
     at_eight$description, at_eight$temp, at_eight$feels_like,
     daily$max_temp, peak_pop$pop, format(peak_pop$time, "%H:%M"), peak_uv$uv_index, format(peak_uv$time, "%H:%M"),
-    at_eight$clouds, format(daily$sunrise, "%H:%M"), format(daily$sunset, "%H:%M"),
+    at_eight$clouds, format(daily$sunrise, "%H:%M"), sunrise_change, rain_next_day, format(daily$sunset, "%H:%M"),
     connected_hour_ranges(as.integer(format(today$time[dry_hours], "%H")))
   )
 }
