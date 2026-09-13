@@ -12,7 +12,7 @@ if (identical(Sys.getenv("PUSHOVER_DRY_RUN"), "true")) {
 
 response <- httr::POST(
   "https://api.pushover.net/1/messages.json",
-  body = list(token = Sys.getenv("PUSHOVER_APPKEY"), user = Sys.getenv("PUSHOVER_USERKEY"), title = "Weather forecast", message = message),
+  body = list(token = Sys.getenv("PUSHOVER_APPKEY"), user = Sys.getenv("PUSHOVER_USERKEY"), title = "Vejrudsigt", message = message),
   encode = "form", httr::timeout(20)
 )
 if (httr::status_code(response) != 200) {
@@ -23,4 +23,4 @@ if (httr::status_code(response) != 200) {
   api_errors <- response_body$errors %||% response_body$error %||% "No diagnostic details returned."
   stop(sprintf("Pushover request failed (%s): %s", httr::status_code(response), paste(api_errors, collapse = "; ")), call. = FALSE)
 }
-message("Daily weather notification sent.")
+message("Dansk vejrnotifikation sendt.")

@@ -96,7 +96,7 @@ notification_text <- function(payload, config = weather_config) {
   today$rh_at_21c <- relative_humidity_at(today$temp, today$humidity)
   dry_hours <- today$rh_at_21c < 60 & as.integer(format(today$time, "%H")) >= 7 & as.integer(format(today$time, "%H")) <= 22
   sprintf(
-    "Weather at 08:00: %s, %.0f°C (feels %.0f°C)\nToday's high: %.0f°C\nPoP: %.0f%% at %s\nUV index tops at: %.1f at %s\nCloud cover: %.0f%%\nSunrise: %s\nSunset: %s\nRH below 60%% at 21°C: %s",
+    "Vejret kl. 08:00: %s, %.0f°C (føles som %.0f°C)\nDagens maksimum: %.0f°C\nNedbørssandsynlighed: %.0f%% kl. %s\nUV-indeks topper på: %.1f kl. %s\nSkydække: %.0f%%\nSolopgang: %s\nSolnedgang: %s\nRelativ luftfugtighed under 60%% ved 21°C: %s",
     at_eight$description, at_eight$temp, at_eight$feels_like,
     daily$max_temp, peak_pop$pop, format(peak_pop$time, "%H:%M"), peak_uv$uv_index, format(peak_uv$time, "%H:%M"),
     at_eight$clouds, format(daily$sunrise, "%H:%M"), format(daily$sunset, "%H:%M"),
