@@ -45,7 +45,13 @@ jobs:
             fi
           else
             echo "publish=true" >> "$GITHUB_OUTPUT"
-            echo "notify=${{ github.event_name == 'workflow_dispatch' && inputs.send_notification }}" >> "$GITHUB_OUTPUT"
+            if [ "${{ github.event_name }}" = "pull_request" ] && { [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ] || [ "${{ github.actor }}" = "dependabot[bot]" ]; }; then
+              # Fork and Dependabot PRs cannot access repository secrets.
+              echo "notify=false" >> "$GITHUB_OUTPUT"
+            else
+              # Notify for manual tests, same-repository PRs, and every push/merge.
+              echo "notify=true" >> "$GITHUB_OUTPUT"
+            fi
           fi
 
   build:
@@ -96,7 +102,7 @@ jobs:
           extra-packages: |
             any::httr
             any::jsonlite
-      - name: Send daily weather forecast
+      - name: Send weather forecast notification
         env:
           OPENWEATHERMAP_APIKEY: ${{ secrets.OPENWEATHERMAP_APIKEY }}
           PUSHOVER_APPKEY: ${{ secrets.PUSHOVER_APPKEY }}
