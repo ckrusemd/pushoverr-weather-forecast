@@ -80,8 +80,35 @@ connected_hour_ranges <- function(hours) {
 
 format_signed_duration <- function(seconds) {
   sign <- if (seconds >= 0) "+" else "-"
-  total_minutes <- round(abs(seconds) / 60)
-  sprintf("%s%d:%02d", sign, total_minutes %/% 60, total_minutes %% 60)
+  total_seconds <- round(abs(seconds))
+  sprintf("%s%d:%02d", sign, total_seconds %/% 60, total_seconds %% 60)
+}
+
+sunrise_sunset_change <- function(config = weather_config) {
+  today <- as.Date(Sys.time(), tz = config$timezone)
+  sun <- suncalc::getSunlightTimes(date = c(today - 1, today), lat = config$lat,
+                                    lon = config$lon, tz = config$timezone)
+  list(
+    sunrise = sun$sunrise[2],
+    sunrise_change = format_signed_duration(as.numeric(difftime(sun$sunrise[2], sun$sunrise[1], units = "secs"))),
+    sunset = sun$sunset[2],
+    sunset_change = format_signed_duration(as.numeric(difftime(sun$sunset[2], sun$sunset[1], units = "secs")))
+  )
+}
+
+fetch_historical_precipitation <- function(date, config = weather_config,
+                                            api_key = require_weather_key()) {
+  timestamp <- as.numeric(as.POSIXct(as.Date(date), tz = "UTC"))
+  response <- httr::RETRY("GET", "https://api.openweathermap.org/data/3.0/onecall/timemachine",
+                          query = list(lat = config$lat, lon = config$lon, dt = timestamp,
+                                       appid = api_key, units = "metric"),
+                          times = 3, pause_base = 1, httr::timeout(30))
+  httr::stop_for_status(response)
+  payload <- jsonlite::fromJSON(httr::content(response, as = "text", encoding = "UTF-8"), simplifyVector = FALSE)
+  if (!is.list(payload$data)) return(NA_real_)
+  sum(vapply(payload$data, function(x) {
+    if (is.null(x$rain)) 0 else as.numeric(x$rain$`1h` %||% 0)
+  }, numeric(1)), na.rm = TRUE)
 }
 
 best_outdoor_hour <- function(hourly) {
@@ -91,7 +118,8 @@ best_outdoor_hour <- function(hourly) {
   today[which.max(today$score), , drop = FALSE]
 }
 
-notification_text <- function(payload, config = weather_config) {
+notification_text <- function(payload, config = weather_config,
+                              precipitation_yesterday_mm = NA_real_) {
   daily_forecast <- daily_frame(payload, config$timezone)
   daily <- daily_forecast[1, , drop = FALSE]
   hourly <- hourly_frame(payload, config$timezone)
@@ -102,17 +130,14 @@ notification_text <- function(payload, config = weather_config) {
   peak_uv <- today[which.max(ifelse(is.na(today$uv_index), -Inf, today$uv_index)), , drop = FALSE]
   today$rh_at_21c <- relative_humidity_at(today$temp, today$humidity)
   dry_hours <- today$rh_at_21c < 60 & as.integer(format(today$time, "%H")) >= 7 & as.integer(format(today$time, "%H")) <= 22
-  sunrise_change <- if (nrow(daily_forecast) >= 2) {
-    format_signed_duration(as.numeric(difftime(daily_forecast$sunrise[2], daily$sunrise, units = "secs")))
-  } else {
-    "n/a"
-  }
+  sun <- sunrise_sunset_change(config)
   rain_next_day <- sum(head(hourly$rain_mm, 24), na.rm = TRUE)
   sprintf(
-    "Weather at 08:00: %s, %.0f°C (feels %.0f°C)\nToday's high: %.0f°C\nPoP: %.0f%% at %s\nUV index tops at: %.1f at %s\nCloud cover: %.0f%%\nSunrise: %s (%s)\nRain next 24h: %.1f mm\nSunset: %s\nRH below 60%% at 21°C: %s",
+    "Weather at 08:00: %s, %.0f°C (feels %.0f°C)\nToday's high: %.0f°C\nPoP: %.0f%% at %s\nUV index tops at: %.1f at %s\nCloud cover: %.0f%%\nSunrise: %s (%s)\nSunset: %s (%s)\nPrecipitation yesterday: %.1f mm\nRain next 24h: %.1f mm\nRH below 60%% at 21°C: %s",
     at_eight$description, at_eight$temp, at_eight$feels_like,
     daily$max_temp, peak_pop$pop, format(peak_pop$time, "%H:%M"), peak_uv$uv_index, format(peak_uv$time, "%H:%M"),
-    at_eight$clouds, format(daily$sunrise, "%H:%M"), sunrise_change, rain_next_day, format(daily$sunset, "%H:%M"),
+    at_eight$clouds, format(sun$sunrise, "%H:%M"), sun$sunrise_change,
+    format(sun$sunset, "%H:%M"), sun$sunset_change, precipitation_yesterday_mm, rain_next_day,
     connected_hour_ranges(as.integer(format(today$time[dry_hours], "%H")))
   )
 }

@@ -71,6 +71,7 @@ jobs:
           extra-packages: |
             any::httr
             any::jsonlite
+            any::suncalc
             any::ggplot2
             any::knitr
             any::rmarkdown

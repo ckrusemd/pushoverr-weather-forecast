@@ -4,7 +4,13 @@ required <- c("PUSHOVER_APPKEY", "PUSHOVER_USERKEY", "OPENWEATHERMAP_APIKEY")
 missing <- required[!nzchar(trimws(Sys.getenv(required)))]
 if (length(missing)) stop(sprintf("Missing required environment variable(s): %s", paste(missing, collapse = ", ")), call. = FALSE)
 
-message <- notification_text(fetch_weather())
+payload <- fetch_weather()
+message <- notification_text(
+  payload,
+  precipitation_yesterday_mm = fetch_historical_precipitation(
+    as.Date(Sys.time(), tz = weather_config$timezone) - 1
+  )
+)
 if (identical(Sys.getenv("PUSHOVER_DRY_RUN"), "true")) {
   message(message)
   quit(status = 0)
