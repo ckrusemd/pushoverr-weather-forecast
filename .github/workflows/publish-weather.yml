@@ -102,6 +102,7 @@ jobs:
           extra-packages: |
             any::httr
             any::jsonlite
+            any::suncalc
       - name: Send daily weather forecast
         env:
           OPENWEATHERMAP_APIKEY: ${{ secrets.OPENWEATHERMAP_APIKEY }}
