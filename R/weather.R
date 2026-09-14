@@ -88,11 +88,21 @@ sunrise_sunset_change <- function(config = weather_config) {
   today <- as.Date(Sys.time(), tz = config$timezone)
   sun <- suncalc::getSunlightTimes(date = c(today - 1, today), lat = config$lat,
                                     lon = config$lon, tz = config$timezone)
+  clock_seconds <- function(x) {
+    as.integer(format(x, "%H")) * 3600 +
+      as.integer(format(x, "%M")) * 60 + as.integer(format(x, "%S"))
+  }
+  clock_delta <- function(previous, current) {
+    delta <- clock_seconds(current) - clock_seconds(previous)
+    if (delta > 12 * 3600) delta <- delta - 24 * 3600
+    if (delta < -12 * 3600) delta <- delta + 24 * 3600
+    delta
+  }
   list(
     sunrise = sun$sunrise[2],
-    sunrise_change = format_signed_duration(as.numeric(difftime(sun$sunrise[2], sun$sunrise[1], units = "secs"))),
+    sunrise_change = format_signed_duration(clock_delta(sun$sunrise[1], sun$sunrise[2])),
     sunset = sun$sunset[2],
-    sunset_change = format_signed_duration(as.numeric(difftime(sun$sunset[2], sun$sunset[1], units = "secs")))
+    sunset_change = format_signed_duration(clock_delta(sun$sunset[1], sun$sunset[2]))
   )
 }
 
