@@ -35,8 +35,7 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
-            if { [ "${{ github.event.schedule }}" = "0 3 * * *" ] && [ "$(TZ=Europe/Copenhagen date +%Z)" = "CEST" ]; } || \
-               { [ "${{ github.event.schedule }}" = "0 4 * * *" ] && [ "$(TZ=Europe/Copenhagen date +%Z)" = "CET" ]; }; then
+            if [ "$(TZ=Europe/Copenhagen date +%H)" = "05" ]; then
               echo "publish=true" >> "$GITHUB_OUTPUT"
               echo "notify=true" >> "$GITHUB_OUTPUT"
             else
