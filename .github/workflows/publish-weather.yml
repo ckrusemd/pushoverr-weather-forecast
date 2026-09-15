@@ -78,8 +78,12 @@ jobs:
       - uses: quarto-dev/quarto-actions/setup@8a96df13519ee81fd526f2dfca5962811136661b # v2
         with:
           version: release
-      - name: Install notification dependencies
-        run: Rscript -e 'install.packages(c("httr", "jsonlite", "suncalc"), repos = "https://cloud.r-project.org")'
+      - uses: r-lib/actions/setup-r-dependencies@465b7d8e732ca3921382b1674c59bada9cbf3399 # v2
+        with:
+          cache-version: 1
+          extra-packages: |
+            any::httr
+            any::jsonlite
             any::ggplot2
             any::knitr
             any::rmarkdown
@@ -104,13 +108,8 @@ jobs:
       - uses: r-lib/actions/setup-r@465b7d8e732ca3921382b1674c59bada9cbf3399 # v2
         with:
           r-version: '4.6.1'
-      - uses: r-lib/actions/setup-r-dependencies@465b7d8e732ca3921382b1674c59bada9cbf3399 # v2
-        with:
-          cache-version: 1
-          extra-packages: |
-            any::httr
-            any::jsonlite
-            any::suncalc
+      - name: Install notification dependencies
+        run: Rscript -e 'install.packages(c("httr", "jsonlite", "suncalc"), repos = "https://cloud.r-project.org")'
       - name: Send daily weather forecast
         env:
           OPENWEATHERMAP_APIKEY: ${{ secrets.OPENWEATHERMAP_APIKEY }}
