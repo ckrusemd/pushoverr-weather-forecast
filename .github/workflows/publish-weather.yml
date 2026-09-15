@@ -35,7 +35,20 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
-            if [ "$(TZ=Europe/Copenhagen date +%H)" = "05" ]; then
+            # GitHub cron is UTC and may start a scheduled run late. Determine
+            # the UTC hour that corresponds to 05:00 Copenhagen time today,
+            # then use the matching cron entry instead of the runner's current
+            # hour (which may be several hours after the scheduled time).
+            local_date="$(TZ=Europe/Copenhagen date +%F)"
+            local_offset="$(TZ=Europe/Copenhagen date -d "$local_date 05:00" +%z)"
+            case "$local_offset" in
+              +0100) expected_utc_hour="04" ;;
+              +0200) expected_utc_hour="03" ;;
+              *) echo "Unsupported Copenhagen UTC offset: $local_offset" >&2; exit 1 ;;
+            esac
+            scheduled_utc_hour="${{ github.event.schedule }}"
+            scheduled_utc_hour="${scheduled_utc_hour%% *}"
+            if [ "$scheduled_utc_hour" = "$expected_utc_hour" ]; then
               echo "publish=true" >> "$GITHUB_OUTPUT"
               echo "notify=true" >> "$GITHUB_OUTPUT"
             else
