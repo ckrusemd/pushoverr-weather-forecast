@@ -46,8 +46,7 @@ jobs:
               +0200) expected_utc_hour="03" ;;
               *) echo "Unsupported Copenhagen UTC offset: $local_offset" >&2; exit 1 ;;
             esac
-            scheduled_utc_hour="${{ github.event.schedule }}"
-            scheduled_utc_hour="${scheduled_utc_hour%% *}"
+            read -r scheduled_minute scheduled_utc_hour _ <<< "${{ github.event.schedule }}"
             if [ "$scheduled_utc_hour" = "$expected_utc_hour" ]; then
               echo "publish=true" >> "$GITHUB_OUTPUT"
               echo "notify=true" >> "$GITHUB_OUTPUT"
