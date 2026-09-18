@@ -110,6 +110,8 @@ jobs:
           r-version: '4.6.1'
       - name: Install notification dependencies
         run: |
+          sudo apt-get update
+          sudo apt-get install -y libcurl4-openssl-dev
           mkdir -p "$R_LIBS_USER"
           Rscript -e 'lib <- Sys.getenv("R_LIBS_USER"); dir.create(lib, recursive = TRUE, showWarnings = FALSE); .libPaths(c(lib, .libPaths())); install.packages(c("httr", "jsonlite", "suncalc"), lib = lib, repos = "https://cloud.r-project.org"); stopifnot(requireNamespace("httr", quietly = TRUE))'
       - name: Send daily weather forecast
