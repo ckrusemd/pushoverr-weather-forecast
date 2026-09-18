@@ -109,7 +109,9 @@ jobs:
         with:
           r-version: '4.6.1'
       - name: Install notification dependencies
-        run: Rscript -e 'install.packages(c("httr", "jsonlite", "suncalc"), repos = "https://cloud.r-project.org")'
+        run: |
+          mkdir -p "$R_LIBS_USER"
+          Rscript -e 'install.packages(c("httr", "jsonlite", "suncalc"), lib = Sys.getenv("R_LIBS_USER"), repos = "https://cloud.r-project.org")'
       - name: Send daily weather forecast
         env:
           OPENWEATHERMAP_APIKEY: ${{ secrets.OPENWEATHERMAP_APIKEY }}
