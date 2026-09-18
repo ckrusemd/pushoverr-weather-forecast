@@ -1,3 +1,8 @@
+user_library <- Sys.getenv("R_LIBS_USER")
+if (nzchar(user_library) && dir.exists(user_library)) {
+  .libPaths(c(user_library, .libPaths()))
+}
+
 source("R/weather.R")
 
 required <- c("PUSHOVER_APPKEY", "PUSHOVER_USERKEY", "OPENWEATHERMAP_APIKEY")
