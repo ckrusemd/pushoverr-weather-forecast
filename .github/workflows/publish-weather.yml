@@ -13,9 +13,10 @@ on:
   pull_request:
     branches: [master]
   schedule:
-    # 05:00 Europe/Copenhagen: both UTC candidates are gated below for CET/CEST.
-    - cron: "0 3 * * *"
-    - cron: "0 4 * * *"
+    # 05:07 Europe/Copenhagen: both UTC candidates are gated below for CET/CEST.
+    # Avoid the heavily loaded top-of-hour queue while staying close to 05:00.
+    - cron: "7 3 * * *"
+    - cron: "7 4 * * *"
 
 permissions:
   contents: read
