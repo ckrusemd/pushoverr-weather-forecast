@@ -13,10 +13,9 @@ on:
   pull_request:
     branches: [master]
   schedule:
-    # 05:07 Europe/Copenhagen: both UTC candidates are gated below for CET/CEST.
-    # Avoid the heavily loaded top-of-hour queue while staying close to 05:00.
-    - cron: "7 3 * * *"
-    - cron: "7 4 * * *"
+    # Retry every 15 minutes around 05:00 Copenhagen time. The gate sends only
+    # once per local date and records successful delivery on a state branch.
+    - cron: "7,22,37,52 3,4 * * *"
 
 permissions:
   contents: read
@@ -32,23 +31,18 @@ jobs:
       publish: ${{ steps.gate.outputs.publish }}
       notify: ${{ steps.gate.outputs.notify }}
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
       - id: gate
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
-            # GitHub cron is UTC and may start a scheduled run late. Determine
-            # the UTC hour that corresponds to 05:00 Copenhagen time today,
-            # then use the matching cron entry instead of the runner's current
-            # hour (which may be several hours after the scheduled time).
             local_date="$(TZ=Europe/Copenhagen date +%F)"
-            local_offset="$(TZ=Europe/Copenhagen date -d "$local_date 05:00" +%z)"
-            case "$local_offset" in
-              +0100) expected_utc_hour="04" ;;
-              +0200) expected_utc_hour="03" ;;
-              *) echo "Unsupported Copenhagen UTC offset: $local_offset" >&2; exit 1 ;;
-            esac
-            read -r scheduled_minute scheduled_utc_hour _ <<< "${{ github.event.schedule }}"
-            if [ "$scheduled_utc_hour" = "$expected_utc_hour" ]; then
+            local_hour="$(TZ=Europe/Copenhagen date +%H)"
+            git fetch origin weather-notification-state:refs/remotes/origin/weather-notification-state 2>/dev/null || true
+            last_sent="$(git show origin/weather-notification-state:last_notification_date 2>/dev/null || true)"
+            if [ "$local_hour" -ge 5 ] && [ "$local_hour" -lt 12 ] && [ "$last_sent" != "$local_date" ]; then
               echo "publish=true" >> "$GITHUB_OUTPUT"
               echo "notify=true" >> "$GITHUB_OUTPUT"
             else
@@ -121,6 +115,34 @@ jobs:
           PUSHOVER_APPKEY: ${{ secrets.PUSHOVER_APPKEY }}
           PUSHOVER_USERKEY: ${{ secrets.PUSHOVER_USERKEY }}
         run: Rscript --vanilla scripts/send-pushover.R
+
+  record-notification-delivery:
+    needs: notify
+    if: needs.notify.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+      - name: Record successful daily delivery
+        shell: bash
+        run: |
+          local_date="$(TZ=Europe/Copenhagen date +%F)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin weather-notification-state:refs/remotes/origin/weather-notification-state 2>/dev/null || true
+          if git show-ref --verify --quiet refs/remotes/origin/weather-notification-state; then
+            git checkout -B weather-notification-state origin/weather-notification-state
+          else
+            git checkout --orphan weather-notification-state
+            git rm -rf .
+          fi
+          printf '%s\n' "$local_date" > last_notification_date
+          git add last_notification_date
+          git commit -m "Record weather notification for $local_date"
+          git push origin weather-notification-state
 
   deploy:
     needs: build
