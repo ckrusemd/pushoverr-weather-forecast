@@ -13,6 +13,12 @@ on:
         required: false
         default: false
         type: boolean
+      delivery_slot:
+        description: Morning or afternoon delivery slot
+        required: false
+        default: morning
+        type: choice
+        options: [morning, afternoon]
   push:
     branches: [master]
   pull_request:
@@ -37,6 +43,7 @@ jobs:
     outputs:
       publish: ${{ steps.gate.outputs.publish }}
       notify: ${{ steps.gate.outputs.notify }}
+      slot: ${{ steps.gate.outputs.slot }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -58,17 +65,25 @@ jobs:
             else
               echo "publish=false" >> "$GITHUB_OUTPUT"
             fi
+            if [ "$scheduled_cron" = "$morning_cron" ]; then
+              slot="morning"
+            elif [ "$scheduled_cron" = "$afternoon_cron" ]; then
+              slot="afternoon"
+            else
+              slot=""
+            fi
             git fetch origin weather-notification-state:refs/remotes/origin/weather-notification-state 2>/dev/null || true
-            last_sent="$(git show origin/weather-notification-state:last_notification_date 2>/dev/null || true)"
-            if [ "$scheduled_cron" = "$morning_cron" ] && [ "$last_sent" != "$local_date" ]; then
+            last_sent="$(git show origin/weather-notification-state:last_${slot}_date 2>/dev/null || true)"
+            if [ -n "$slot" ] && [ "$last_sent" != "$local_date" ]; then
               echo "notify=true" >> "$GITHUB_OUTPUT"
             else
               echo "notify=false" >> "$GITHUB_OUTPUT"
             fi
           elif [ "${{ inputs.scheduled_delivery }}" = "true" ]; then
             local_date="$(TZ=Europe/Copenhagen date +%F)"
+            slot="${{ inputs.delivery_slot }}"
             git fetch origin weather-notification-state:refs/remotes/origin/weather-notification-state 2>/dev/null || true
-            last_sent="$(git show origin/weather-notification-state:last_notification_date 2>/dev/null || true)"
+            last_sent="$(git show origin/weather-notification-state:last_${slot}_date 2>/dev/null || true)"
             echo "publish=true" >> "$GITHUB_OUTPUT"
             if [ "$last_sent" != "$local_date" ]; then
               echo "notify=true" >> "$GITHUB_OUTPUT"
@@ -76,9 +91,11 @@ jobs:
               echo "notify=false" >> "$GITHUB_OUTPUT"
             fi
           else
+            slot="${{ inputs.delivery_slot }}"
             echo "publish=true" >> "$GITHUB_OUTPUT"
             echo "notify=${{ inputs.send_notification || false }}" >> "$GITHUB_OUTPUT"
           fi
+          echo "slot=$slot" >> "$GITHUB_OUTPUT"
 
   build:
     needs: schedule-gate
@@ -164,6 +181,7 @@ jobs:
         shell: bash
         run: |
           local_date="$(TZ=Europe/Copenhagen date +%F)"
+          slot="${{ needs.schedule-gate.outputs.slot }}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin weather-notification-state:refs/remotes/origin/weather-notification-state 2>/dev/null || true
@@ -173,7 +191,7 @@ jobs:
             git checkout --orphan weather-notification-state
             git rm -rf .
           fi
-          printf '%s\n' "$local_date" > last_notification_date
-          git add last_notification_date
-          git commit -m "Record weather notification for $local_date"
+          printf '%s\n' "$local_date" > "last_${slot}_date"
+          git add "last_${slot}_date"
+          git commit -m "Record $slot weather notification for $local_date"
           git push origin weather-notification-state
