@@ -2,8 +2,11 @@ name: Daily Pushover weather
 
 on:
   schedule:
-    # Retry through the CET/CEST UTC windows for 05:00 and 15:00 Copenhagen.
-    - cron: "7,22,37,52 3,4,13,14 * * *"
+    # 05:07 and 15:07 Copenhagen time, with both CET and CEST UTC candidates.
+    - cron: "7 3 * * *"
+    - cron: "7 4 * * *"
+    - cron: "7 13 * * *"
+    - cron: "7 14 * * *"
   workflow_dispatch:
     inputs:
       send_notification:
