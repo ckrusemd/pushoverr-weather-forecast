@@ -1,0 +1,130 @@
+name: Daily Pushover weather
+
+on:
+  schedule:
+    # Retry through the CET/CEST UTC windows for 05:00 and 15:00 Copenhagen.
+    - cron: "7,22,37,52 3,4,13,14 * * *"
+  workflow_dispatch:
+    inputs:
+      send_notification:
+        description: Send a Pushover message now
+        required: false
+        default: false
+        type: boolean
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-pushover
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      notify: ${{ steps.gate.outputs.notify }}
+      slot: ${{ steps.gate.outputs.slot }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+      - id: gate
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            local_date="$(TZ=Europe/Copenhagen date +%F)"
+            local_hour="$(TZ=Europe/Copenhagen date +%H)"
+            case "$local_hour" in
+              05|06|07) slot="morning" ;;
+              15|16|17) slot="afternoon" ;;
+              *) slot="" ;;
+            esac
+            git fetch origin weather-notification-state:refs/remotes/origin/weather-notification-state 2>/dev/null || true
+            state="$(git show origin/weather-notification-state:delivery_state 2>/dev/null || true)"
+            morning_sent="$(printf '%s\n' "$state" | sed -n 's/^morning=//p')"
+            afternoon_sent="$(printf '%s\n' "$state" | sed -n 's/^afternoon=//p')"
+            if [ -z "$state" ]; then
+              morning_sent="$(git show origin/weather-notification-state:last_notification_date 2>/dev/null || true)"
+            fi
+            slot_sent="$morning_sent"
+            if [ "$slot" = "afternoon" ]; then slot_sent="$afternoon_sent"; fi
+            echo "slot=$slot" >> "$GITHUB_OUTPUT"
+            if [ -n "$slot" ] && [ "$slot_sent" != "$local_date" ]; then
+              echo "notify=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "notify=false" >> "$GITHUB_OUTPUT"
+            fi
+          elif [ "${{ github.event_name }}" = "push" ] || \
+               { [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.event.pull_request.head.repo.full_name }}" = "${{ github.repository }}" ] && [ "${{ github.actor }}" != "dependabot[bot]" ]; } || \
+               { [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.send_notification }}" = "true" ]; }; then
+            echo "notify=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "notify=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  notify:
+    needs: gate
+    if: needs.gate.outputs.notify == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: r-lib/actions/setup-r@465b7d8e732ca3921382b1674c59bada9cbf3399 # v2
+        with:
+          r-version: '4.6.1'
+      - name: Install notification dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcurl4-openssl-dev
+          mkdir -p "$R_LIBS_USER"
+          Rscript -e 'lib <- Sys.getenv("R_LIBS_USER"); dir.create(lib, recursive = TRUE, showWarnings = FALSE); .libPaths(c(lib, .libPaths())); install.packages(c("httr", "jsonlite", "suncalc"), lib = lib, repos = "https://cloud.r-project.org"); stopifnot(requireNamespace("httr", quietly = TRUE), requireNamespace("jsonlite", quietly = TRUE), requireNamespace("suncalc", quietly = TRUE))'
+      - name: Send weather forecast
+        env:
+          OPENWEATHERMAP_APIKEY: ${{ secrets.OPENWEATHERMAP_APIKEY }}
+          PUSHOVER_APPKEY: ${{ secrets.PUSHOVER_APPKEY }}
+          PUSHOVER_USERKEY: ${{ secrets.PUSHOVER_USERKEY }}
+        run: Rscript --vanilla scripts/send-pushover.R
+
+  record-delivery:
+    needs: [gate, notify]
+    if: github.event_name == 'schedule' && needs.notify.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+      - name: Record successful scheduled delivery
+        shell: bash
+        run: |
+          local_date="$(TZ=Europe/Copenhagen date +%F)"
+          slot="${{ needs.gate.outputs.slot }}"
+          if [ "$slot" != "morning" ] && [ "$slot" != "afternoon" ]; then
+            echo "Unexpected notification slot: $slot" >&2
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin weather-notification-state:refs/remotes/origin/weather-notification-state 2>/dev/null || true
+          if git show-ref --verify --quiet refs/remotes/origin/weather-notification-state; then
+            git checkout -B weather-notification-state origin/weather-notification-state
+          else
+            git checkout --orphan weather-notification-state
+            git rm -rf .
+          fi
+          state="$(git show origin/weather-notification-state:delivery_state 2>/dev/null || true)"
+          morning_sent="$(printf '%s\n' "$state" | sed -n 's/^morning=//p')"
+          afternoon_sent="$(printf '%s\n' "$state" | sed -n 's/^afternoon=//p')"
+          if [ -z "$state" ]; then
+            morning_sent="$(git show origin/weather-notification-state:last_notification_date 2>/dev/null || true)"
+          fi
+          if [ "$slot" = "morning" ]; then morning_sent="$local_date"; else afternoon_sent="$local_date"; fi
+          printf 'morning=%s\nafternoon=%s\n' "$morning_sent" "$afternoon_sent" > delivery_state
+          git add delivery_state
+          git commit -m "Record $slot weather notification for $local_date"
+          git push origin weather-notification-state
