@@ -49,11 +49,6 @@ jobs:
           if [ "${{ github.event_name }}" = "schedule" ]; then
             local_date="$(TZ=Europe/Copenhagen date +%F)"
             local_hour="$(TZ=Europe/Copenhagen date +%H)"
-            case "$local_hour" in
-              05|06|07) slot="morning" ;;
-              15|16|17) slot="afternoon" ;;
-              *) slot="" ;;
-            esac
             git fetch origin weather-notification-state:refs/remotes/origin/weather-notification-state 2>/dev/null || true
             state="$(git show origin/weather-notification-state:delivery_state 2>/dev/null || true)"
             morning_sent="$(printf '%s\n' "$state" | sed -n 's/^morning=//p')"
@@ -61,8 +56,15 @@ jobs:
             if [ -z "$state" ]; then
               morning_sent="$(git show origin/weather-notification-state:last_notification_date 2>/dev/null || true)"
             fi
-            slot_sent="$morning_sent"
-            if [ "$slot" = "afternoon" ]; then slot_sent="$afternoon_sent"; fi
+            slot=""
+            slot_sent=""
+            if [ "$((10#$local_hour))" -ge 5 ] && [ "$morning_sent" != "$local_date" ]; then
+              slot="morning"
+              slot_sent="$morning_sent"
+            elif [ "$((10#$local_hour))" -ge 15 ] && [ "$afternoon_sent" != "$local_date" ]; then
+              slot="afternoon"
+              slot_sent="$afternoon_sent"
+            fi
             echo "slot=$slot" >> "$GITHUB_OUTPUT"
             if [ -n "$slot" ] && [ "$slot_sent" != "$local_date" ]; then
               echo "notify=true" >> "$GITHUB_OUTPUT"

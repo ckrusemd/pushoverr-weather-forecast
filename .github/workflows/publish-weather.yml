@@ -7,8 +7,8 @@ on:
   pull_request:
     branches: [master]
   schedule:
-    # Hourly watchdog. It dispatches the separate Pushover workflow once during
-    # each Copenhagen delivery window, even when GitHub starts cron runs late.
+    # Hourly watchdog. It catches up any missing daily deployment or Pushover
+    # delivery even when GitHub starts cron runs late or drops an earlier run.
     - cron: "17 * * * *"
 
 permissions:
@@ -33,13 +33,23 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
+            local_date="$(TZ=Europe/Copenhagen date +%F)"
             local_hour="$(TZ=Europe/Copenhagen date +%H)"
-            case "$local_hour" in
-              05|06|07) slot="morning" ;;
-              15|16|17) slot="afternoon" ;;
-              *) slot="" ;;
-            esac
-            if [ "$local_hour" = "05" ] || [ "$local_hour" = "15" ]; then
+            git fetch origin weather-notification-state:refs/remotes/origin/weather-notification-state 2>/dev/null || true
+            state="$(git show origin/weather-notification-state:delivery_state 2>/dev/null || true)"
+            morning_sent="$(printf '%s\n' "$state" | sed -n 's/^morning=//p')"
+            afternoon_sent="$(printf '%s\n' "$state" | sed -n 's/^afternoon=//p')"
+            slot=""
+            # Always catch up the earliest missing delivery. The broad windows
+            # make delayed or dropped GitHub cron invocations self-healing.
+            if [ "$((10#$local_hour))" -ge 5 ] && [ "$morning_sent" != "$local_date" ]; then
+              slot="morning"
+            elif [ "$((10#$local_hour))" -ge 15 ] && [ "$afternoon_sent" != "$local_date" ]; then
+              slot="afternoon"
+            fi
+            git fetch origin weather-pages-state:refs/remotes/origin/weather-pages-state 2>/dev/null || true
+            pages_sent="$(git show origin/weather-pages-state:last_deployment_date 2>/dev/null || true)"
+            if [ "$((10#$local_hour))" -ge 5 ] && [ "$pages_sent" != "$local_date" ]; then
               echo "publish=true" >> "$GITHUB_OUTPUT"
             else
               echo "publish=false" >> "$GITHUB_OUTPUT"
@@ -111,3 +121,31 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+
+  record-deployment:
+    needs: deploy
+    if: github.event_name == 'schedule' && needs.deploy.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+      - name: Record successful daily deployment
+        shell: bash
+        run: |
+          local_date="$(TZ=Europe/Copenhagen date +%F)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin weather-pages-state:refs/remotes/origin/weather-pages-state 2>/dev/null || true
+          if git show-ref --verify --quiet refs/remotes/origin/weather-pages-state; then
+            git checkout -B weather-pages-state origin/weather-pages-state
+          else
+            git checkout --orphan weather-pages-state
+            git rm -rf .
+          fi
+          printf '%s\n' "$local_date" > last_deployment_date
+          git add last_deployment_date
+          git commit -m "Record weather deployment for $local_date"
+          git push origin weather-pages-state

@@ -1,13 +1,13 @@
 # Weather Console
 
-A dark, responsive [Quarto](https://quarto.org/) weather dashboard for Copenhagen. It fetches live [OpenWeatherMap](https://openweathermap.org/api) data, publishes to GitHub Pages, and sends one concise daily forecast through [Pushover](https://pushover.net/).
+A dark, responsive [Quarto](https://quarto.org/) weather dashboard for Copenhagen. It fetches live [OpenWeatherMap](https://openweathermap.org/api) data, publishes to GitHub Pages, and sends concise forecasts through [Pushover](https://pushover.net/).
 
 ## Features
 
 - **Weather Forecasts**: Hourly and daily weather data via OpenWeatherMap One Call API 3.0
 - **Dashboard**: Current conditions, outdoor score, 48-hour forecast, seven-day outlook and daylight view
 - **Pushover notifications**: A compact forecast twice daily at 05:00 and 15:00 Europe/Copenhagen, including sunrise change and expected rain total
-- **GitHub Pages**: The site is rebuilt on pushes and each scheduled daily run
+- **GitHub Pages**: The site is rebuilt on pushes and once daily after 05:00 Europe/Copenhagen
 - **Preserved analysis**: The former detailed report remains in `weather_pushoverr.Rmd` as a historical source during the Quarto migration
 
 ## Setup
