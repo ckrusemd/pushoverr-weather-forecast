@@ -2,36 +2,18 @@ name: Publish weather dashboard
 
 on:
   workflow_dispatch:
-    inputs:
-      send_notification:
-        description: Send the Pushover notification
-        required: false
-        default: false
-        type: boolean
-      scheduled_delivery:
-        description: Use the daily delivery lock for an external scheduler
-        required: false
-        default: false
-        type: boolean
-      delivery_slot:
-        description: Morning or afternoon delivery slot
-        required: false
-        default: morning
-        type: choice
-        options: [morning, afternoon]
   push:
     branches: [master]
   pull_request:
     branches: [master]
   schedule:
-    # 05:07 and 15:07 Copenhagen time, expressed as CET and CEST UTC hours.
-    - cron: "7 3 * * *"
-    - cron: "7 4 * * *"
-    - cron: "7 13 * * *"
-    - cron: "7 14 * * *"
+    # Hourly watchdog. It dispatches the separate Pushover workflow once during
+    # each Copenhagen delivery window, even when GitHub starts cron runs late.
+    - cron: "17 * * * *"
 
 permissions:
-  contents: write
+  contents: read
+  actions: write
 
 concurrency:
   group: weather-pages
@@ -42,7 +24,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       publish: ${{ steps.gate.outputs.publish }}
-      notify: ${{ steps.gate.outputs.notify }}
       slot: ${{ steps.gate.outputs.slot }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -52,50 +33,36 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
-            local_date="$(TZ=Europe/Copenhagen date +%F)"
-            local_offset="$(TZ=Europe/Copenhagen date -d "$local_date 05:00" +%z)"
-            scheduled_cron='${{ github.event.schedule }}'
-            if [ "$local_offset" = "+0200" ]; then
-              morning_cron="7 3 * * *"; afternoon_cron="7 13 * * *"
-            else
-              morning_cron="7 4 * * *"; afternoon_cron="7 14 * * *"
-            fi
-            if [ "$scheduled_cron" = "$morning_cron" ] || [ "$scheduled_cron" = "$afternoon_cron" ]; then
+            local_hour="$(TZ=Europe/Copenhagen date +%H)"
+            case "$local_hour" in
+              05|06|07) slot="morning" ;;
+              15|16|17) slot="afternoon" ;;
+              *) slot="" ;;
+            esac
+            if [ "$local_hour" = "05" ] || [ "$local_hour" = "15" ]; then
               echo "publish=true" >> "$GITHUB_OUTPUT"
             else
               echo "publish=false" >> "$GITHUB_OUTPUT"
             fi
-            if [ "$scheduled_cron" = "$morning_cron" ]; then
-              slot="morning"
-            elif [ "$scheduled_cron" = "$afternoon_cron" ]; then
-              slot="afternoon"
-            else
-              slot=""
-            fi
-            git fetch origin weather-notification-state:refs/remotes/origin/weather-notification-state 2>/dev/null || true
-            last_sent="$(git show origin/weather-notification-state:last_${slot}_date 2>/dev/null || true)"
-            if [ -n "$slot" ] && [ "$last_sent" != "$local_date" ]; then
-              echo "notify=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "notify=false" >> "$GITHUB_OUTPUT"
-            fi
-          elif [ "${{ inputs.scheduled_delivery }}" = "true" ]; then
-            local_date="$(TZ=Europe/Copenhagen date +%F)"
-            slot="${{ inputs.delivery_slot }}"
-            git fetch origin weather-notification-state:refs/remotes/origin/weather-notification-state 2>/dev/null || true
-            last_sent="$(git show origin/weather-notification-state:last_${slot}_date 2>/dev/null || true)"
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-            if [ "$last_sent" != "$local_date" ]; then
-              echo "notify=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "notify=false" >> "$GITHUB_OUTPUT"
-            fi
           else
-            slot="${{ inputs.delivery_slot }}"
+            slot=""
             echo "publish=true" >> "$GITHUB_OUTPUT"
-            echo "notify=${{ inputs.send_notification || false }}" >> "$GITHUB_OUTPUT"
           fi
           echo "slot=$slot" >> "$GITHUB_OUTPUT"
+
+  dispatch-pushover:
+    needs: schedule-gate
+    if: github.event_name == 'schedule' && needs.schedule-gate.outputs.slot != ''
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch scheduled Pushover workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DELIVERY_SLOT: ${{ needs.schedule-gate.outputs.slot }}
+        run: gh workflow run daily-pushover.yml --repo "$GITHUB_REPOSITORY" --ref master -f scheduled_delivery=true -f delivery_slot="$DELIVERY_SLOT"
 
   build:
     needs: schedule-gate
@@ -144,54 +111,3 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
-
-  notify:
-    needs: schedule-gate
-    if: needs.schedule-gate.outputs.notify == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: r-lib/actions/setup-r@465b7d8e732ca3921382b1674c59bada9cbf3399 # v2
-        with:
-          r-version: '4.6.1'
-      - uses: r-lib/actions/setup-r-dependencies@465b7d8e732ca3921382b1674c59bada9cbf3399 # v2
-        with:
-          extra-packages: |
-            any::httr
-            any::jsonlite
-            any::suncalc
-      - name: Send daily weather forecast
-        env:
-          OPENWEATHERMAP_APIKEY: ${{ secrets.OPENWEATHERMAP_APIKEY }}
-          PUSHOVER_APPKEY: ${{ secrets.PUSHOVER_APPKEY }}
-          PUSHOVER_USERKEY: ${{ secrets.PUSHOVER_USERKEY }}
-        run: Rscript --vanilla scripts/send-pushover.R
-
-  record-notification:
-    needs: [schedule-gate, notify]
-    if: (github.event_name == 'schedule' || inputs.scheduled_delivery == true) && needs.schedule-gate.outputs.notify == 'true' && needs.notify.result == 'success'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          fetch-depth: 1
-      - name: Record successful notification
-        shell: bash
-        run: |
-          local_date="$(TZ=Europe/Copenhagen date +%F)"
-          slot="${{ needs.schedule-gate.outputs.slot }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin weather-notification-state:refs/remotes/origin/weather-notification-state 2>/dev/null || true
-          if git show-ref --verify --quiet refs/remotes/origin/weather-notification-state; then
-            git checkout -B weather-notification-state origin/weather-notification-state
-          else
-            git checkout --orphan weather-notification-state
-            git rm -rf .
-          fi
-          printf '%s\n' "$local_date" > "last_${slot}_date"
-          git add "last_${slot}_date"
-          git commit -m "Record $slot weather notification for $local_date"
-          git push origin weather-notification-state

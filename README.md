@@ -6,7 +6,7 @@ A dark, responsive [Quarto](https://quarto.org/) weather dashboard for Copenhage
 
 - **Weather Forecasts**: Hourly and daily weather data via OpenWeatherMap One Call API 3.0
 - **Dashboard**: Current conditions, outdoor score, 48-hour forecast, seven-day outlook and daylight view
-- **Pushover notifications**: A compact forecast on pushes, same-repository pull requests, and twice daily at 05:00 and 15:00 Europe/Copenhagen, including sunrise change and expected rain total
+- **Pushover notifications**: A compact forecast twice daily at 05:00 and 15:00 Europe/Copenhagen, including sunrise change and expected rain total
 - **GitHub Pages**: The site is rebuilt on pushes and each scheduled daily run
 - **Preserved analysis**: The former detailed report remains in `weather_pushoverr.Rmd` as a historical source during the Quarto migration
 
@@ -41,7 +41,7 @@ Render the dashboard locally (with `OPENWEATHERMAP_APIKEY` set):
 quarto render
 ```
 
-The GitHub Actions workflow needs `OPENWEATHERMAP_APIKEY`, `PUSHOVER_USERKEY`, and `PUSHOVER_APPKEY` stored as repository secrets. It never writes secrets to files or the published site. Pushes and pull requests from branches in this repository send notifications automatically; fork pull requests cannot send them because GitHub withholds repository secrets from fork workflows. A manual workflow run can optionally send the notification.
+The GitHub Actions workflows need `OPENWEATHERMAP_APIKEY`, `PUSHOVER_USERKEY`, and `PUSHOVER_APPKEY` stored as repository secrets. They never write secrets to files or the published site. A manual Pushover workflow run can optionally send the notification.
 
 ## License
 

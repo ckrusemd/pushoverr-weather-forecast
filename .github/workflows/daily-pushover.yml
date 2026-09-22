@@ -14,10 +14,17 @@ on:
         required: false
         default: false
         type: boolean
-  push:
-    branches: [master]
-  pull_request:
-    branches: [master]
+      scheduled_delivery:
+        description: Use the delivery lock for a scheduler/watchdog
+        required: false
+        default: false
+        type: boolean
+      delivery_slot:
+        description: Morning or afternoon delivery slot
+        required: false
+        default: morning
+        type: choice
+        options: [morning, afternoon]
 
 permissions:
   contents: read
@@ -62,9 +69,19 @@ jobs:
             else
               echo "notify=false" >> "$GITHUB_OUTPUT"
             fi
-          elif [ "${{ github.event_name }}" = "push" ] || \
-               { [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.event.pull_request.head.repo.full_name }}" = "${{ github.repository }}" ] && [ "${{ github.actor }}" != "dependabot[bot]" ]; } || \
-               { [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.send_notification }}" = "true" ]; }; then
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.scheduled_delivery }}" = "true" ]; then
+            local_date="$(TZ=Europe/Copenhagen date +%F)"
+            slot="${{ inputs.delivery_slot }}"
+            git fetch origin weather-notification-state:refs/remotes/origin/weather-notification-state 2>/dev/null || true
+            state="$(git show origin/weather-notification-state:delivery_state 2>/dev/null || true)"
+            slot_sent="$(printf '%s\n' "$state" | sed -n "s/^${slot}=//p")"
+            echo "slot=$slot" >> "$GITHUB_OUTPUT"
+            if [ "$slot_sent" != "$local_date" ]; then
+              echo "notify=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "notify=false" >> "$GITHUB_OUTPUT"
+            fi
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.send_notification }}" = "true" ]; then
             echo "notify=true" >> "$GITHUB_OUTPUT"
           else
             echo "notify=false" >> "$GITHUB_OUTPUT"
@@ -94,7 +111,7 @@ jobs:
 
   record-delivery:
     needs: [gate, notify]
-    if: github.event_name == 'schedule' && needs.notify.result == 'success'
+    if: (github.event_name == 'schedule' || inputs.scheduled_delivery == true) && needs.notify.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
