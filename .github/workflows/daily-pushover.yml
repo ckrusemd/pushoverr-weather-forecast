@@ -1,5 +1,5 @@
 name: Daily Pushover weather
-run-name: Weather Pushover reconciliation • ${{ github.event_name }} • ${{ github.run_id }}
+run-name: Weather Pushover reconciliation • ${{ inputs.dispatch_id || github.event_name }} • ${{ github.run_id }}
 
 on:
   schedule:
@@ -20,6 +20,11 @@ on:
         default: morning
         type: choice
         options: [morning, afternoon]
+      dispatch_id:
+        description: Correlation ID used by the external scheduler
+        required: false
+        default: manual
+        type: string
 
 permissions:
   contents: read
