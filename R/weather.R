@@ -12,10 +12,10 @@ require_weather_key <- function() {
 }
 
 fetch_weather <- function(config = weather_config, api_key = require_weather_key()) {
-  response <- httr::GET(
+  response <- httr::RETRY("GET",
     "https://api.openweathermap.org/data/3.0/onecall",
     query = list(lat = config$lat, lon = config$lon, appid = api_key, units = "metric"),
-    httr::timeout(20)
+    times = 4, pause_base = 1, terminate_on = c(400, 401, 403, 404), httr::timeout(20)
   )
   if (httr::status_code(response) != 200) {
     stop(sprintf("OpenWeather request failed (%s).", httr::status_code(response)), call. = FALSE)
@@ -129,7 +129,9 @@ best_outdoor_hour <- function(hourly) {
 }
 
 notification_text <- function(payload, config = weather_config,
-                              precipitation_yesterday_mm = NA_real_) {
+                              precipitation_yesterday_mm = NA_real_,
+                              delivery_slot = "morning") {
+  if (!delivery_slot %in% c("morning", "afternoon")) stop("Invalid delivery slot.", call. = FALSE)
   daily_forecast <- daily_frame(payload, config$timezone)
   daily <- daily_forecast[1, , drop = FALSE]
   hourly <- hourly_frame(payload, config$timezone)
@@ -142,12 +144,30 @@ notification_text <- function(payload, config = weather_config,
   dry_hours <- today$rh_at_21c < 60 & as.integer(format(today$time, "%H")) >= 7 & as.integer(format(today$time, "%H")) <= 22
   sun <- sunrise_sunset_change(config)
   rain_next_day <- sum(head(hourly$rain_mm, 24), na.rm = TRUE)
+  if (delivery_slot == "afternoon") {
+    now <- as.POSIXct(Sys.time(), tz = config$timezone)
+    remaining <- today[today$time >= now, , drop = FALSE]
+    if (!nrow(remaining)) remaining <- tail(today, 1)
+    peak_pop_remaining <- remaining[which.max(remaining$pop), , drop = FALSE]
+    peak_uv_remaining <- remaining[which.max(ifelse(is.na(remaining$uv_index), -Inf, remaining$uv_index)), , drop = FALSE]
+    remaining$rh_at_21c <- relative_humidity_at(remaining$temp, remaining$humidity)
+    dry_remaining <- remaining$rh_at_21c < 60 & as.integer(format(remaining$time, "%H")) <= 22
+    return(sprintf(
+      "Weather now: %s, %.0f°C (feels %.0f°C)\nRest-of-day high: %.0f°C\nPoP remaining: %.0f%% at %s\nUV remaining tops at: %.1f at %s\nCloud cover now: %.0f%%\nSunset: %s (%s)\nRain next 24h: %.1f mm\nRH below 60%% at 21°C: %s",
+      remaining$description[1], remaining$temp[1], remaining$feels_like[1],
+      max(remaining$temp, na.rm = TRUE), peak_pop_remaining$pop, format(peak_pop_remaining$time, "%H:%M"),
+      peak_uv_remaining$uv_index, format(peak_uv_remaining$time, "%H:%M"), remaining$clouds[1],
+      format(sun$sunset, "%H:%M"), sun$sunset_change, sum(head(remaining$rain_mm, 24), na.rm = TRUE),
+      connected_hour_ranges(as.integer(format(remaining$time[dry_remaining], "%H")))
+    ))
+  }
+  precipitation_text <- if (is.finite(precipitation_yesterday_mm)) sprintf("%.1f mm", precipitation_yesterday_mm) else "Unavailable"
   sprintf(
-    "Weather at 08:00: %s, %.0f°C (feels %.0f°C)\nToday's high: %.0f°C\nPoP: %.0f%% at %s\nUV index tops at: %.1f at %s\nCloud cover: %.0f%%\nSunrise: %s (%s)\nSunset: %s (%s)\nPrecipitation yesterday: %.1f mm\nRain next 24h: %.1f mm\nRH below 60%% at 21°C: %s",
+    "Weather at 08:00: %s, %.0f°C (feels %.0f°C)\nToday's high: %.0f°C\nPoP: %.0f%% at %s\nUV index tops at: %.1f at %s\nCloud cover: %.0f%%\nSunrise: %s (%s)\nSunset: %s (%s)\nPrecipitation yesterday: %s\nRain next 24h: %.1f mm\nRH below 60%% at 21°C: %s",
     at_eight$description, at_eight$temp, at_eight$feels_like,
     daily$max_temp, peak_pop$pop, format(peak_pop$time, "%H:%M"), peak_uv$uv_index, format(peak_uv$time, "%H:%M"),
     at_eight$clouds, format(sun$sunrise, "%H:%M"), sun$sunrise_change,
-    format(sun$sunset, "%H:%M"), sun$sunset_change, precipitation_yesterday_mm, rain_next_day,
+    format(sun$sunset, "%H:%M"), sun$sunset_change, precipitation_text, rain_next_day,
     connected_hour_ranges(as.integer(format(today$time[dry_hours], "%H")))
   )
 }

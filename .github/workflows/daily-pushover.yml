@@ -1,27 +1,22 @@
 name: Daily Pushover weather
+run-name: Weather Pushover reconciliation • ${{ github.event_name }} • ${{ github.run_id }}
 
 on:
   schedule:
-    # 05:07 and 15:07 Copenhagen time, with both CET and CEST UTC candidates.
-    - cron: "7 3 * * *"
-    - cron: "7 4 * * *"
-    - cron: "7 13 * * *"
-    - cron: "7 14 * * *"
+    # Staggered away from the top of the hour. Every run reconciles all slots
+    # that are due, so delayed or dropped cron events are repaired by a later run.
+    - cron: "7,22,37,52 * * * *"
   workflow_dispatch:
     inputs:
-      send_notification:
-        description: Send a Pushover message now
-        required: false
-        default: false
-        type: boolean
-      scheduled_delivery:
-        description: Use the delivery lock for a scheduler/watchdog
-        required: false
-        default: false
-        type: boolean
-      delivery_slot:
-        description: Morning or afternoon delivery slot
-        required: false
+      mode:
+        description: Reconcile due slots, force one slot, or preview due slots
+        required: true
+        default: reconcile
+        type: choice
+        options: [reconcile, force, dry-run]
+      slot:
+        description: Slot used by force mode
+        required: true
         default: morning
         type: choice
         options: [morning, afternoon]
@@ -30,106 +25,63 @@ permissions:
   contents: read
 
 concurrency:
-  group: daily-pushover
+  group: weather-pushover-reconciliation
   cancel-in-progress: false
 
 jobs:
-  gate:
+  reconcile:
     runs-on: ubuntu-latest
-    outputs:
-      notify: ${{ steps.gate.outputs.notify }}
-      slot: ${{ steps.gate.outputs.slot }}
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          fetch-depth: 1
-      - id: gate
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            local_date="$(TZ=Europe/Copenhagen date +%F)"
-            local_hour="$(TZ=Europe/Copenhagen date +%H)"
-            git fetch origin weather-notification-state:refs/remotes/origin/weather-notification-state 2>/dev/null || true
-            state="$(git show origin/weather-notification-state:delivery_state 2>/dev/null || true)"
-            morning_sent="$(printf '%s\n' "$state" | sed -n 's/^morning=//p')"
-            afternoon_sent="$(printf '%s\n' "$state" | sed -n 's/^afternoon=//p')"
-            if [ -z "$state" ]; then
-              morning_sent="$(git show origin/weather-notification-state:last_notification_date 2>/dev/null || true)"
-            fi
-            slot=""
-            slot_sent=""
-            if [ "$((10#$local_hour))" -ge 5 ] && [ "$morning_sent" != "$local_date" ]; then
-              slot="morning"
-              slot_sent="$morning_sent"
-            elif [ "$((10#$local_hour))" -ge 15 ] && [ "$afternoon_sent" != "$local_date" ]; then
-              slot="afternoon"
-              slot_sent="$afternoon_sent"
-            fi
-            echo "slot=$slot" >> "$GITHUB_OUTPUT"
-            if [ -n "$slot" ] && [ "$slot_sent" != "$local_date" ]; then
-              echo "notify=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "notify=false" >> "$GITHUB_OUTPUT"
-            fi
-          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.scheduled_delivery }}" = "true" ]; then
-            local_date="$(TZ=Europe/Copenhagen date +%F)"
-            slot="${{ inputs.delivery_slot }}"
-            git fetch origin weather-notification-state:refs/remotes/origin/weather-notification-state 2>/dev/null || true
-            state="$(git show origin/weather-notification-state:delivery_state 2>/dev/null || true)"
-            slot_sent="$(printf '%s\n' "$state" | sed -n "s/^${slot}=//p")"
-            echo "slot=$slot" >> "$GITHUB_OUTPUT"
-            if [ "$slot_sent" != "$local_date" ]; then
-              echo "notify=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "notify=false" >> "$GITHUB_OUTPUT"
-            fi
-          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.send_notification }}" = "true" ]; then
-            echo "notify=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "notify=false" >> "$GITHUB_OUTPUT"
-          fi
-
-  notify:
-    needs: gate
-    if: needs.gate.outputs.notify == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: r-lib/actions/setup-r@465b7d8e732ca3921382b1674c59bada9cbf3399 # v2
-        with:
-          r-version: '4.6.1'
-      - name: Install notification dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libcurl4-openssl-dev
-          mkdir -p "$R_LIBS_USER"
-          Rscript -e 'lib <- Sys.getenv("R_LIBS_USER"); dir.create(lib, recursive = TRUE, showWarnings = FALSE); .libPaths(c(lib, .libPaths())); install.packages(c("httr", "jsonlite", "suncalc"), lib = lib, repos = "https://cloud.r-project.org"); stopifnot(requireNamespace("httr", quietly = TRUE), requireNamespace("jsonlite", quietly = TRUE), requireNamespace("suncalc", quietly = TRUE))'
-      - name: Send weather forecast
-        env:
-          OPENWEATHERMAP_APIKEY: ${{ secrets.OPENWEATHERMAP_APIKEY }}
-          PUSHOVER_APPKEY: ${{ secrets.PUSHOVER_APPKEY }}
-          PUSHOVER_USERKEY: ${{ secrets.PUSHOVER_USERKEY }}
-        run: Rscript --vanilla scripts/send-pushover.R
-
-  record-delivery:
-    needs: [gate, notify]
-    if: (github.event_name == 'schedule' || inputs.scheduled_delivery == true) && needs.notify.result == 'success'
-    runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 1
-      - name: Record successful scheduled delivery
+      - uses: r-lib/actions/setup-r@465b7d8e732ca3921382b1674c59bada9cbf3399 # v2
+        with:
+          r-version: '4.6.1'
+      - uses: r-lib/actions/setup-r-dependencies@465b7d8e732ca3921382b1674c59bada9cbf3399 # v2
+        with:
+          cache-version: 2
+          extra-packages: |
+            any::httr
+            any::jsonlite
+            any::suncalc
+      - name: Load delivery state
+        id: state
         shell: bash
         run: |
-          local_date="$(TZ=Europe/Copenhagen date +%F)"
-          slot="${{ needs.gate.outputs.slot }}"
-          if [ "$slot" != "morning" ] && [ "$slot" != "afternoon" ]; then
-            echo "Unexpected notification slot: $slot" >&2
-            exit 1
+          set -euo pipefail
+          state_path="$RUNNER_TEMP/notification-state.json"
+          git fetch origin weather-notification-state:refs/remotes/origin/weather-notification-state 2>/dev/null || true
+          if git show origin/weather-notification-state:notification-state.json > "$state_path" 2>/dev/null; then
+            echo "Loaded versioned notification state."
+          elif git show origin/weather-notification-state:delivery_state > "$state_path" 2>/dev/null; then
+            echo "Loaded legacy notification state for migration."
+          else
+            printf '{"schema_version":1,"deliveries":{}}\n' > "$state_path"
+            echo "Created empty notification state."
           fi
+          echo "path=$state_path" >> "$GITHUB_OUTPUT"
+      - name: Reconcile Pushover deliveries
+        id: notify
+        continue-on-error: true
+        env:
+          OPENWEATHERMAP_APIKEY: ${{ secrets.OPENWEATHERMAP_APIKEY }}
+          PUSHOVER_APPKEY: ${{ secrets.PUSHOVER_APPKEY }}
+          PUSHOVER_USERKEY: ${{ secrets.PUSHOVER_USERKEY }}
+          NOTIFICATION_STATE_PATH: ${{ steps.state.outputs.path }}
+          REQUESTED_MODE: ${{ inputs.mode || 'reconcile' }}
+          REQUESTED_SLOT: ${{ inputs.slot || 'morning' }}
+        run: Rscript --vanilla scripts/send-pushover.R --mode="$REQUESTED_MODE" --slot="$REQUESTED_SLOT" --state="$NOTIFICATION_STATE_PATH"
+      - name: Persist accepted deliveries
+        if: always() && steps.notify.outcome != 'skipped' && (github.event_name == 'schedule' || inputs.mode == 'reconcile')
+        shell: bash
+        env:
+          STATE_PATH: ${{ steps.state.outputs.path }}
+        run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin weather-notification-state:refs/remotes/origin/weather-notification-state 2>/dev/null || true
@@ -137,16 +89,18 @@ jobs:
             git checkout -B weather-notification-state origin/weather-notification-state
           else
             git checkout --orphan weather-notification-state
-            git rm -rf .
+            git rm -rf . || true
           fi
-          state="$(git show origin/weather-notification-state:delivery_state 2>/dev/null || true)"
-          morning_sent="$(printf '%s\n' "$state" | sed -n 's/^morning=//p')"
-          afternoon_sent="$(printf '%s\n' "$state" | sed -n 's/^afternoon=//p')"
-          if [ -z "$state" ]; then
-            morning_sent="$(git show origin/weather-notification-state:last_notification_date 2>/dev/null || true)"
+          cp "$STATE_PATH" notification-state.json
+          git add notification-state.json
+          if git diff --cached --quiet; then
+            echo "Delivery state is unchanged."
+          else
+            git commit -m "Record accepted weather notifications"
+            git push origin weather-notification-state
           fi
-          if [ "$slot" = "morning" ]; then morning_sent="$local_date"; else afternoon_sent="$local_date"; fi
-          printf 'morning=%s\nafternoon=%s\n' "$morning_sent" "$afternoon_sent" > delivery_state
-          git add delivery_state
-          git commit -m "Record $slot weather notification for $local_date"
-          git push origin weather-notification-state
+      - name: Fail when reconciliation failed
+        if: always() && steps.notify.outcome == 'failure'
+        run: |
+          echo "One or more due Pushover deliveries failed after retries." >&2
+          exit 1

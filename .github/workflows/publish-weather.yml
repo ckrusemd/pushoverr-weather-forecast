@@ -7,13 +7,11 @@ on:
   pull_request:
     branches: [master]
   schedule:
-    # Hourly watchdog. It catches up any missing daily deployment or Pushover
-    # delivery even when GitHub starts cron runs late or drops an earlier run.
+    # Hourly Pages watchdog; notification delivery has its own workflow.
     - cron: "17 * * * *"
 
 permissions:
   contents: read
-  actions: write
 
 concurrency:
   group: weather-pages
@@ -24,7 +22,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       publish: ${{ steps.gate.outputs.publish }}
-      slot: ${{ steps.gate.outputs.slot }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -35,18 +32,6 @@ jobs:
           if [ "${{ github.event_name }}" = "schedule" ]; then
             local_date="$(TZ=Europe/Copenhagen date +%F)"
             local_hour="$(TZ=Europe/Copenhagen date +%H)"
-            git fetch origin weather-notification-state:refs/remotes/origin/weather-notification-state 2>/dev/null || true
-            state="$(git show origin/weather-notification-state:delivery_state 2>/dev/null || true)"
-            morning_sent="$(printf '%s\n' "$state" | sed -n 's/^morning=//p')"
-            afternoon_sent="$(printf '%s\n' "$state" | sed -n 's/^afternoon=//p')"
-            slot=""
-            # Always catch up the earliest missing delivery. The broad windows
-            # make delayed or dropped GitHub cron invocations self-healing.
-            if [ "$((10#$local_hour))" -ge 5 ] && [ "$morning_sent" != "$local_date" ]; then
-              slot="morning"
-            elif [ "$((10#$local_hour))" -ge 15 ] && [ "$afternoon_sent" != "$local_date" ]; then
-              slot="afternoon"
-            fi
             git fetch origin weather-pages-state:refs/remotes/origin/weather-pages-state 2>/dev/null || true
             pages_sent="$(git show origin/weather-pages-state:last_deployment_date 2>/dev/null || true)"
             if [ "$((10#$local_hour))" -ge 5 ] && [ "$pages_sent" != "$local_date" ]; then
@@ -55,24 +40,8 @@ jobs:
               echo "publish=false" >> "$GITHUB_OUTPUT"
             fi
           else
-            slot=""
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
-          echo "slot=$slot" >> "$GITHUB_OUTPUT"
-
-  dispatch-pushover:
-    needs: schedule-gate
-    if: github.event_name == 'schedule' && needs.schedule-gate.outputs.slot != ''
-    runs-on: ubuntu-latest
-    permissions:
-      actions: write
-      contents: read
-    steps:
-      - name: Dispatch scheduled Pushover workflow
-        env:
-          GH_TOKEN: ${{ github.token }}
-          DELIVERY_SLOT: ${{ needs.schedule-gate.outputs.slot }}
-        run: gh workflow run daily-pushover.yml --repo "$GITHUB_REPOSITORY" --ref master -f scheduled_delivery=true -f delivery_slot="$DELIVERY_SLOT"
 
   build:
     needs: schedule-gate
@@ -96,6 +65,8 @@ jobs:
             any::ggplot2
             any::knitr
             any::rmarkdown
+      - name: Test notification reconciliation
+        run: Rscript --vanilla tests/test-notification.R
       - name: Validate weather access
         env:
           OPENWEATHERMAP_APIKEY: ${{ secrets.OPENWEATHERMAP_APIKEY }}
