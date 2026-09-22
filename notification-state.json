@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "deliveries": {
+    "2026-09-22": {
+      "morning": {
+        "accepted_at": "2026-09-22T00:00:00+00:00",
+        "request_id": "legacy",
+        "run_id": "legacy"
+      },
+      "afternoon": {
+        "accepted_at": "2026-09-22T17:01:50Z",
+        "request_id": "afef77c2-453b-4777-a654-60cb804b0199",
+        "run_id": "35757687121"
+      }
+    }
+  }
+}
