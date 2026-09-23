@@ -20,6 +20,7 @@ concurrency:
 jobs:
   schedule-gate:
     runs-on: ubuntu-latest
+    timeout-minutes: 300
     outputs:
       publish: ${{ steps.gate.outputs.publish }}
     steps:
@@ -31,13 +32,21 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
             local_date="$(TZ=Europe/Copenhagen date +%F)"
-            local_hour="$(TZ=Europe/Copenhagen date +%H)"
             git fetch origin weather-pages-state:refs/remotes/origin/weather-pages-state 2>/dev/null || true
             pages_sent="$(git show origin/weather-pages-state:last_deployment_date 2>/dev/null || true)"
-            if [ "$((10#$local_hour))" -ge 5 ] && [ "$pages_sent" != "$local_date" ]; then
+            if [ "$pages_sent" != "$local_date" ]; then
+              now_epoch="$(date +%s)"
+              target_epoch="$(TZ=Europe/Copenhagen date -d 'today 05:00' +%s)"
+              if [ "$now_epoch" -lt "$target_epoch" ]; then
+                wait_seconds="$((target_epoch - now_epoch))"
+                echo "Scheduled fallback arrived early; waiting ${wait_seconds}s until 05:00 Europe/Copenhagen."
+                sleep "$wait_seconds"
+              fi
+              local_hour="$(TZ=Europe/Copenhagen date +%H)"
               echo "publish=true" >> "$GITHUB_OUTPUT"
               publish=true
             else
+              local_hour="$(TZ=Europe/Copenhagen date +%H)"
               echo "publish=false" >> "$GITHUB_OUTPUT"
               publish=false
             fi
