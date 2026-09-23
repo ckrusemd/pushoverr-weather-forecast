@@ -36,11 +36,15 @@ jobs:
             pages_sent="$(git show origin/weather-pages-state:last_deployment_date 2>/dev/null || true)"
             if [ "$((10#$local_hour))" -ge 5 ] && [ "$pages_sent" != "$local_date" ]; then
               echo "publish=true" >> "$GITHUB_OUTPUT"
+              publish=true
             else
               echo "publish=false" >> "$GITHUB_OUTPUT"
+              publish=false
             fi
+            echo "Pages gate: date=$local_date hour=$local_hour recorded=$pages_sent publish=$publish"
           else
             echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "Pages gate: event=${{ github.event_name }} publish=true"
           fi
 
   build:
@@ -95,7 +99,7 @@ jobs:
 
   record-deployment:
     needs: deploy
-    if: github.event_name == 'schedule' && needs.deploy.result == 'success'
+    if: github.event_name != 'pull_request' && needs.deploy.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
