@@ -3,8 +3,9 @@ run-name: Weather Pushover reconciliation • ${{ inputs.dispatch_id || github.e
 
 on:
   schedule:
-    # Staggered away from the top of the hour. Every run reconciles all slots
-    # that are due, so delayed or dropped cron events are repaired by a later run.
+    # Target each slot in CET and CEST, with hourly checks to recover delayed
+    # or skipped cron events. No runner waits for a future time.
+    - cron: "5 3,4,13,14 * * *"
     - cron: "7,22,37,52 * * * *"
   workflow_dispatch:
     inputs:
@@ -34,27 +35,60 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  reconcile:
+  gate:
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    timeout-minutes: 5
+    outputs:
+      notify: ${{ steps.gate.outputs.notify }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+      - id: gate
+        shell: bash
+        env:
+          REQUESTED_MODE: ${{ inputs.mode || 'reconcile' }}
+          REQUESTED_SLOT: ${{ inputs.slot || 'morning' }}
+        run: |
+          set -euo pipefail
+          local_date="$(TZ=Europe/Copenhagen date +%F)"
+          local_minute="$(TZ=Europe/Copenhagen date +%H%M)"
+          git fetch origin weather-notification-state:refs/remotes/origin/weather-notification-state 2>/dev/null || true
+          state="$(git show origin/weather-notification-state:notification-state.json 2>/dev/null || true)"
+          if [ -z "$state" ]; then
+            state="$(git show origin/weather-notification-state:delivery_state 2>/dev/null || true)"
+          fi
+          morning_sent="$(printf '%s' "$state" | jq -r --arg date "$local_date" '.deliveries[$date].morning // empty' 2>/dev/null || true)"
+          if [ -z "$morning_sent" ]; then
+            legacy_morning="$(printf '%s\n' "$state" | sed -n 's/^morning=//p' | head -n 1)"
+            [ "$legacy_morning" != "$local_date" ] || morning_sent=legacy
+          fi
+          afternoon_sent="$(printf '%s' "$state" | jq -r --arg date "$local_date" '.deliveries[$date].afternoon // empty' 2>/dev/null || true)"
+          if [ -z "$afternoon_sent" ]; then
+            legacy_afternoon="$(printf '%s\n' "$state" | sed -n 's/^afternoon=//p' | head -n 1)"
+            [ "$legacy_afternoon" != "$local_date" ] || afternoon_sent=legacy
+          fi
+          notify=false
+          if [ "$REQUESTED_MODE" = "force" ]; then
+            notify=true
+          elif { [ "${{ github.event_name }}" = "schedule" ] || [ "$REQUESTED_MODE" = "reconcile" ] || [ "$REQUESTED_MODE" = "dry-run" ]; }; then
+            if [ "$((10#$local_minute))" -ge 500 ] && [ "$morning_sent" = "" ]; then notify=true; fi
+            if [ "$((10#$local_minute))" -ge 900 ] && [ "$afternoon_sent" = "" ]; then notify=true; fi
+          fi
+          echo "notify=$notify" >> "$GITHUB_OUTPUT"
+          echo "Weather gate: date=$local_date minute=$local_minute mode=$REQUESTED_MODE notify=$notify"
+
+  reconcile:
+    needs: gate
+    if: needs.gate.outputs.notify == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 1
-      - name: Wait until the Copenhagen morning delivery window
-        if: github.event_name == 'schedule'
-        shell: bash
-        run: |
-          set -euo pipefail
-          now_epoch="$(date +%s)"
-          target_epoch="$(TZ=Europe/Copenhagen date -d 'today 05:00' +%s)"
-          if [ "$now_epoch" -lt "$target_epoch" ]; then
-            wait_seconds="$((target_epoch - now_epoch))"
-            echo "Scheduled fallback arrived early; waiting ${wait_seconds}s until 05:00 Europe/Copenhagen."
-            sleep "$wait_seconds"
-          fi
       - uses: r-lib/actions/setup-r@465b7d8e732ca3921382b1674c59bada9cbf3399 # v2
         with:
           r-version: '4.6.1'
