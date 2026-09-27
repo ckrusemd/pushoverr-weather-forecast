@@ -8,6 +8,7 @@ on:
     branches: [master]
   schedule:
     # Hourly Pages watchdog; notification delivery has its own workflow.
+    - cron: "5 3,4 * * *"
     - cron: "17 * * * *"
 
 permissions:

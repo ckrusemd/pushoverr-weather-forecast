@@ -6,7 +6,7 @@ on:
     # Target each slot in CET and CEST, with hourly checks to recover delayed
     # or skipped cron events. No runner waits for a future time.
     - cron: "5 3,4,13,14 * * *"
-    - cron: "7,22,37,52 * * * *"
+    - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
       mode:
