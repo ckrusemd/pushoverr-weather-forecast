@@ -58,20 +58,20 @@ jobs:
           if [ -z "$state" ]; then
             state="$(git show origin/weather-notification-state:delivery_state 2>/dev/null || true)"
           fi
-          morning_sent="$(printf '%s' "$state" | jq -r --arg date "$local_date" '.deliveries[$date].morning // empty' 2>/dev/null || true)"
+          morning_sent="$(printf '%s' "$state" | jq -r --arg date "$local_date" '.deliveries[$date].morning.request_id // empty' 2>/dev/null || true)"
           if [ -z "$morning_sent" ]; then
             legacy_morning="$(printf '%s\n' "$state" | sed -n 's/^morning=//p' | head -n 1)"
             [ "$legacy_morning" != "$local_date" ] || morning_sent=legacy
           fi
-          afternoon_sent="$(printf '%s' "$state" | jq -r --arg date "$local_date" '.deliveries[$date].afternoon // empty' 2>/dev/null || true)"
+          afternoon_sent="$(printf '%s' "$state" | jq -r --arg date "$local_date" '.deliveries[$date].afternoon.request_id // empty' 2>/dev/null || true)"
           if [ -z "$afternoon_sent" ]; then
             legacy_afternoon="$(printf '%s\n' "$state" | sed -n 's/^afternoon=//p' | head -n 1)"
             [ "$legacy_afternoon" != "$local_date" ] || afternoon_sent=legacy
           fi
           notify=false
-          if [ "$REQUESTED_MODE" = "force" ]; then
+          if [ "${{ github.event_name }}" != "schedule" ]; then
             notify=true
-          elif { [ "${{ github.event_name }}" = "schedule" ] || [ "$REQUESTED_MODE" = "reconcile" ] || [ "$REQUESTED_MODE" = "dry-run" ]; }; then
+          else
             if [ "$((10#$local_minute))" -ge 500 ] && [ "$morning_sent" = "" ]; then notify=true; fi
             if [ "$((10#$local_minute))" -ge 900 ] && [ "$afternoon_sent" = "" ]; then notify=true; fi
           fi
