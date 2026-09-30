@@ -84,6 +84,13 @@
         "request_id": "2e1edcab-5013-47d7-aa4b-3ea811f700b3",
         "run_id": "36593606532"
       }
+    },
+    "2026-09-30": {
+      "morning": {
+        "accepted_at": "2026-09-30T06:46:09Z",
+        "request_id": "ee93a797-1d70-4e78-9e0b-7bfc8f313eab",
+        "run_id": "36679828397"
+      }
     }
   }
 }
