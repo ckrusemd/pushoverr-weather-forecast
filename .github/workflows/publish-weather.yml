@@ -1,11 +1,24 @@
 name: Publish weather dashboard
+run-name: Weather Pages • ${{ inputs.dispatch_id || github.event_name }} • ${{ github.run_id }}
 
 on:
   workflow_dispatch:
+    inputs:
+      scheduled_delivery:
+        description: Apply the daily time and deployment-state gate to an external scheduled call
+        required: false
+        default: false
+        type: boolean
+      dispatch_id:
+        description: Correlation ID used by the external scheduler
+        required: false
+        default: manual
+        type: string
   push:
     branches: [master]
   schedule:
-    # Hourly Pages watchdog; notification delivery has its own workflow.
+    # Remove the target cron only after the hosted trigger is verified/enabled.
+    # The hourly Pages watchdog remains independent from notifications.
     - cron: "5 3,4 * * *"
     - cron: "17 * * * *"
 
@@ -28,40 +41,9 @@ jobs:
           fetch-depth: 1
       - id: gate
         shell: bash
-        run: |
-          set -euo pipefail
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            local_date="$(TZ=Europe/Copenhagen date +%F)"
-            local_hour="$(TZ=Europe/Copenhagen date +%H)"
-            if git ls-remote --exit-code --heads origin refs/heads/weather-pages-state > /dev/null; then
-              git fetch origin weather-pages-state:refs/remotes/origin/weather-pages-state
-              pages_sent="$(git show origin/weather-pages-state:last_deployment_date)"
-              if [[ ! "$pages_sent" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] ||
-                ! canonical_date="$(TZ=Europe/Copenhagen date -d "$pages_sent" +%F 2>/dev/null)" ||
-                [[ "$canonical_date" != "$pages_sent" ]]; then
-                echo "Deployment state contains an invalid date; refusing to reset it." >&2
-                exit 1
-              fi
-            else
-              status=$?
-              if [ "$status" -ne 2 ]; then
-                echo "Could not read deployment state; refusing to reset it." >&2
-                exit "$status"
-              fi
-              pages_sent=""
-            fi
-            if [ "$((10#$local_hour))" -ge 5 ] && [ "$pages_sent" != "$local_date" ]; then
-              echo "publish=true" >> "$GITHUB_OUTPUT"
-              publish=true
-            else
-              echo "publish=false" >> "$GITHUB_OUTPUT"
-              publish=false
-            fi
-            echo "Pages gate: date=$local_date hour=$local_hour recorded=$pages_sent publish=$publish"
-          else
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-            echo "Pages gate: event=${{ github.event_name }} publish=true"
-          fi
+        env:
+          SCHEDULED_DELIVERY: ${{ inputs.scheduled_delivery || false }}
+        run: bash scripts/pages-gate.sh "$GITHUB_EVENT_NAME" "$SCHEDULED_DELIVERY"
 
   build:
     needs: schedule-gate

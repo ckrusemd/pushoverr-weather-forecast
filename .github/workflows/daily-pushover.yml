@@ -3,12 +3,17 @@ run-name: Weather Pushover reconciliation • ${{ inputs.dispatch_id || github.e
 
 on:
   schedule:
-    # Target each slot in CET and CEST, with hourly checks to recover delayed
-    # or skipped cron events. No runner waits for a future time.
+    # Retain target crons until the free hosted trigger is verified and enabled.
+    # Then remove the first entry; keep the hourly recovery watchdog.
     - cron: "5 3,4,13,14 * * *"
     - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
+      scheduled_delivery:
+        description: Apply time and accepted-slot gates to an external scheduled call
+        required: false
+        default: false
+        type: boolean
       mode:
         description: Reconcile due slots, force one slot, or preview due slots
         required: true
@@ -49,11 +54,12 @@ jobs:
         env:
           REQUESTED_MODE: ${{ inputs.mode || 'reconcile' }}
           REQUESTED_SLOT: ${{ inputs.slot || 'morning' }}
+          SCHEDULED_DELIVERY: ${{ inputs.scheduled_delivery || false }}
         run: |
           set -euo pipefail
           state_path="$RUNNER_TEMP/notification-gate-state.json"
           bash scripts/notification-state.sh load "$state_path"
-          bash scripts/notification-gate.sh "$state_path" "$GITHUB_EVENT_NAME" "$REQUESTED_MODE" "$REQUESTED_SLOT"
+          bash scripts/notification-gate.sh "$state_path" "$GITHUB_EVENT_NAME" "$REQUESTED_MODE" "$REQUESTED_SLOT" "" "" "$SCHEDULED_DELIVERY"
 
   reconcile:
     needs: gate
@@ -96,7 +102,7 @@ jobs:
           REQUESTED_SLOT: ${{ inputs.slot || 'morning' }}
         run: Rscript --vanilla scripts/send-pushover.R --mode="$REQUESTED_MODE" --slot="$REQUESTED_SLOT" --state="$NOTIFICATION_STATE_PATH"
       - name: Persist accepted deliveries
-        if: always() && steps.state.outcome == 'success' && (steps.notify.outcome == 'success' || steps.notify.outcome == 'failure') && (github.event_name == 'schedule' || inputs.mode == 'reconcile')
+        if: always() && steps.state.outcome == 'success' && (steps.notify.outcome == 'success' || steps.notify.outcome == 'failure') && (github.event_name == 'schedule' || inputs.scheduled_delivery || inputs.mode == 'reconcile')
         shell: bash
         env:
           STATE_PATH: ${{ steps.state.outputs.path }}
