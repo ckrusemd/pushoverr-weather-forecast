@@ -126,6 +126,11 @@ dashboard_daily <- function(snapshot) {
 }
 
 dashboard_best_hour <- function(hourly, now, tz = weather_config$timezone) {
+  # Delegate once the shared helper's optional clock/config API is available (PR2).
+  if (all(c("now", "config") %in% names(formals(best_outdoor_hour)))) {
+    return(best_outdoor_hour(hourly, now = now,
+                             config = utils::modifyList(weather_config, list(timezone = tz))))
+  }
   today <- hourly[as.Date(hourly$time, tz = tz) == as.Date(now, tz = tz), , drop = FALSE]
   if (!nrow(today)) today <- hourly
   today$score <- outdoor_score(today)

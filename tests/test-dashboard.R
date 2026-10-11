@@ -119,6 +119,19 @@ test_dashboard <- function() {
   }
   equal(as.numeric(dashboard_best_hour(hourly, now)$score), max(outdoor_score(hourly[1:16, ])),
         "Dashboard preserves the outdoor score formula")
+  missing_scores <- hourly
+  missing_scores$temp <- NA_real_
+  equal(nrow(dashboard_best_hour(missing_scores, now)), 0L, "Missing outdoor scores return an empty row")
+  shared_best <- best_outdoor_hour
+  delegated <- NULL
+  best_outdoor_hour <- function(hourly, now = Sys.time(), config = weather_config) {
+    delegated <<- list(now = now, config = config)
+    shared_best(hourly)
+  }
+  dashboard_best_hour(hourly, now)
+  equal(delegated$now, now, "Shared best-hour helper receives the render clock")
+  equal(delegated$config$timezone, weather_config$timezone, "Shared best-hour helper receives Copenhagen config")
+  best_outdoor_hour <- shared_best
 
   # Copy only this agent's inputs into an isolated project for consumer and render tests.
   project <- file.path(root, "project")
@@ -144,6 +157,16 @@ test_dashboard <- function() {
     eval(parse(text = lines[start:end]), envir = consumer)
     equal(consumer$snapshot$build_id, page_snapshot$build_id, paste(page, "reads the shared build"))
     equal(consumer$snapshot$payload, page_snapshot$payload, paste(page, "reads identical weather"))
+    if (page == "index.qmd") {
+      consumer$best <- consumer$best[FALSE, , drop = FALSE]
+      best_lines <- lines[grepl("`r.*best\\$", lines)]
+      equal(length(best_lines), 2L, "Both best-hour fields have explicit empty-state handling")
+      for (line in best_lines) {
+        expression <- sub("^.*`r (.*)`.*$", "\\1", line)
+        equal(eval(parse(text = expression), envir = consumer), "Unavailable",
+              "Index best time and score must show Unavailable for an empty result")
+      }
+    }
   }
   # The standalone preparation script and a reader run in separate R processes.
   run_r <- function(args) {
@@ -181,6 +204,18 @@ test_dashboard <- function() {
          "Full render must produce all three pages")
   full_again <- render()
   expect(full_again$build_id != full$build_id, "Every full render must refresh")
+  missing_pop_fixture <- fixture
+  missing_pop_fixture$hourly <- lapply(fixture$hourly, function(row) { row$pop <- NULL; row })
+  jsonlite::write_json(missing_pop_fixture, file.path("tests", "fixtures", "missing-pop.json"),
+                       auto_unbox = TRUE, digits = NA)
+  Sys.setenv(WEATHER_FIXTURE_PATH = "tests/fixtures/missing-pop.json")
+  render("index.qmd")
+  if (all(!is.finite(outdoor_score(hourly_frame(missing_pop_fixture))))) {
+    missing_html <- paste(readLines("_site/index.html", warn = FALSE), collapse = "\n")
+    expect(grepl("Score Unavailable", missing_html, fixed = TRUE),
+           "Missing optional precipitation scores must render as Unavailable")
+  }
+  Sys.setenv(WEATHER_FIXTURE_PATH = "tests/fixtures/weather.json")
   Sys.setenv(WEATHER_RENDER_NOW = "2026-10-14 23:30:00")
   single <- render("forecast.qmd")
   expect(single$build_id != full_again$build_id, "Standalone Quarto page render must refresh")

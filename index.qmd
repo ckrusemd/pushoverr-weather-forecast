@@ -40,9 +40,9 @@ Wind `r sprintf("%.0f m/s", daily$wind_speed)`
 :::
 ::: {.metric}
 ## Best outside
-`r format(best$time, "%H:%M")`
+`r if (nrow(best) && is.finite(best$score[1])) format(best$time[1], "%H:%M", tz = snapshot$timezone) else "Unavailable"`
 
-Score `r round(best$score)` / 100
+Score `r if (nrow(best) && is.finite(best$score[1])) sprintf("%.0f / 100", best$score[1]) else "Unavailable"`
 :::
 :::
 
