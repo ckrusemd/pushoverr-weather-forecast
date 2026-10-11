@@ -1,22 +1,61 @@
 notification_timezone <- "Europe/Copenhagen"
 notification_slots <- c(morning = 5L * 60L, afternoon = 15L * 60L)
 
-empty_notification_state <- function() list(schema_version = 1L, deliveries = list())
+empty_notification_state <- function() list(schema_version = 1L, deliveries = setNames(list(), character()))
+
+notification_string <- function(x) is.character(x) && length(x) == 1L && !is.na(x) &&
+  nzchar(trimws(x, whitespace = "[\\x20\\t\\r\\n]"))
+
+notification_date_valid <- function(x) {
+  if (!is.character(x) || length(x) != 1L || is.na(x) ||
+      !grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}$", x) || substr(x, 1, 4) == "0000") return(FALSE)
+  parsed <- suppressWarnings(as.Date(x, format = "%Y-%m-%d"))
+  !is.na(parsed) && identical(format(parsed, "%Y-%m-%d"), x)
+}
+
+notification_timestamp_valid <- function(x) {
+  notification_string(x) &&
+    grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$", x) &&
+    notification_date_valid(substr(x, 1, 10))
+}
 
 normalize_notification_state <- function(state) {
-  if (!is.list(state)) state <- empty_notification_state()
+  invalid <- function() stop("Invalid notification state (schema 1 required).", call. = FALSE)
+  object <- function(x) is.list(x) && !is.null(names(x)) && !anyDuplicated(names(x))
+  if (!object(state) || !setequal(names(state), c("schema_version", "deliveries")) ||
+      !is.numeric(state$schema_version) || length(state$schema_version) != 1L ||
+      is.na(state$schema_version) || state$schema_version != 1 || !is.list(state$deliveries)) invalid()
+  # The previous schema-1 writer emitted [] for an empty deliveries map.
+  if (!length(state$deliveries)) state$deliveries <- setNames(list(), character())
+  if (!object(state$deliveries)) invalid()
+  for (date in names(state$deliveries)) {
+    slots <- state$deliveries[[date]]
+    if (!notification_date_valid(date) || !object(slots) ||
+        any(!names(slots) %in% names(notification_slots))) invalid()
+    for (record in slots) {
+      if (!object(record) || !setequal(names(record), c("request_id", "accepted_at", "run_id")) ||
+          !notification_string(record$request_id) || !notification_string(record$run_id) ||
+          !notification_timestamp_valid(record$accepted_at)) invalid()
+    }
+  }
   state$schema_version <- 1L
-  if (is.null(state$deliveries) || !is.list(state$deliveries)) state$deliveries <- list()
   state
 }
 
 legacy_notification_state <- function(lines) {
   state <- empty_notification_state()
-  for (slot in names(notification_slots)) {
-    value <- sub(sprintf("^%s=", slot), "", grep(sprintf("^%s=", slot), lines, value = TRUE))
-    if (length(value) && nzchar(value[[1]])) {
-      date <- value[[1]]
-      if (is.null(state$deliveries[[date]])) state$deliveries[[date]] <- list()
+  lines <- sub("\r$", "", lines)
+  lines <- lines[nzchar(lines)]
+  if (!length(lines) || any(!grepl("^(morning|afternoon)=", lines)))
+    stop("Unrecognized legacy notification state.", call. = FALSE)
+  slots <- sub("=.*$", "", lines)
+  if (anyDuplicated(slots)) stop("Duplicate legacy notification slot.", call. = FALSE)
+  for (i in seq_along(lines)) {
+    slot <- slots[[i]]
+    date <- sub("^[^=]+=", "", lines[[i]])
+    if (nzchar(date)) {
+      if (!notification_date_valid(date)) stop("Invalid legacy notification date.", call. = FALSE)
+      if (is.null(state$deliveries[[date]])) state$deliveries[[date]] <- setNames(list(), character())
       state$deliveries[[date]][[slot]] <- list(
         accepted_at = paste0(date, "T00:00:00+00:00"), request_id = "legacy", run_id = "legacy"
       )
@@ -26,7 +65,13 @@ legacy_notification_state <- function(lines) {
 }
 
 read_notification_state <- function(path) {
-  if (!file.exists(path) || !file.info(path)$size) return(empty_notification_state())
+  if (!file.exists(path)) {
+    link <- Sys.readlink(path)
+    if (!is.na(link) && nzchar(link)) stop("Unreadable notification state.", call. = FALSE)
+    return(empty_notification_state())
+  }
+  if (isTRUE(file.info(path)$isdir) || file.access(path, 4L) != 0L || !file.info(path)$size)
+    stop("Unreadable or empty notification state.", call. = FALSE)
   text <- paste(readLines(path, warn = FALSE), collapse = "\n")
   state <- tryCatch(
     jsonlite::fromJSON(text, simplifyVector = FALSE),
@@ -35,13 +80,37 @@ read_notification_state <- function(path) {
   normalize_notification_state(state)
 }
 
-write_notification_state <- function(state, path, today = Sys.Date()) {
+merge_notification_state <- function(latest, accepted) {
+  latest <- normalize_notification_state(latest)
+  accepted <- normalize_notification_state(accepted)
+  for (date in names(accepted$deliveries)) {
+    if (is.null(latest$deliveries[[date]])) latest$deliveries[[date]] <- setNames(list(), character())
+    for (slot in names(accepted$deliveries[[date]])) {
+      if (is.null(latest$deliveries[[date]][[slot]]))
+        latest$deliveries[[date]][[slot]] <- accepted$deliveries[[date]][[slot]]
+    }
+  }
+  latest
+}
+
+atomic_notification_state <- function(state, path) {
+  temporary <- tempfile(pattern = ".notification-", tmpdir = dirname(path))
+  on.exit(unlink(temporary), add = TRUE)
+  jsonlite::write_json(state, temporary, auto_unbox = TRUE, pretty = TRUE, null = "null")
+  if (!file.rename(temporary, path)) stop("Could not atomically replace notification state.", call. = FALSE)
+}
+
+write_notification_state <- function(state, path, today = as.Date(notification_local_date())) {
   state <- normalize_notification_state(state)
   keep_after <- as.character(as.Date(today) - 30L)
   dates <- names(state$deliveries)
   if (length(dates)) state$deliveries <- state$deliveries[dates >= keep_after]
   dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
-  jsonlite::write_json(state, path, auto_unbox = TRUE, pretty = TRUE, null = "null")
+  # Journal first: retain accepted records even if replacing the working state fails.
+  journal_path <- paste0(path, ".accepted.json")
+  journal <- merge_notification_state(state, read_notification_state(journal_path))
+  atomic_notification_state(journal, journal_path)
+  atomic_notification_state(state, path)
   invisible(state)
 }
 
@@ -54,6 +123,7 @@ notification_local_minute <- function(now = Sys.time(), timezone = notification_
 }
 
 notification_was_accepted <- function(state, date, slot) {
+  state <- normalize_notification_state(state)
   !is.null(state$deliveries[[date]]) && !is.null(state$deliveries[[date]][[slot]])
 }
 
@@ -72,9 +142,11 @@ notification_slot_is_due <- function(state, slot, now = Sys.time(), timezone = n
 }
 
 record_notification_acceptance <- function(state, date, slot, request_id, accepted_at, run_id = "local") {
-  stopifnot(slot %in% names(notification_slots), nzchar(request_id))
+  stopifnot(slot %in% names(notification_slots), notification_date_valid(date),
+            notification_string(request_id), notification_string(run_id),
+            notification_timestamp_valid(accepted_at))
   state <- normalize_notification_state(state)
-  if (is.null(state$deliveries[[date]])) state$deliveries[[date]] <- list()
+  if (is.null(state$deliveries[[date]])) state$deliveries[[date]] <- setNames(list(), character())
   state$deliveries[[date]][[slot]] <- list(
     accepted_at = accepted_at, request_id = request_id, run_id = run_id
   )
@@ -84,9 +156,11 @@ record_notification_acceptance <- function(state, date, slot, request_id, accept
 parse_pushover_acceptance <- function(response) {
   status_code <- httr::status_code(response)
   body_text <- httr::content(response, as = "text", encoding = "UTF-8")
-  body <- tryCatch(jsonlite::fromJSON(body_text, simplifyVector = TRUE), error = function(e) list())
-  accepted <- identical(status_code, 200L) && identical(as.integer(body$status %||% 0L), 1L) &&
-    is.character(body$request) && length(body$request) == 1L && nzchar(body$request)
+  body <- tryCatch(jsonlite::fromJSON(body_text, simplifyVector = FALSE), error = function(e) list())
+  if (!is.list(body)) body <- list()
+  accepted <- identical(status_code, 200L) && is.list(body) && !anyDuplicated(names(body)) &&
+    is.numeric(body$status) && length(body$status) == 1L && !is.na(body$status) &&
+    body$status == 1 && notification_string(body$request)
   list(
     accepted = accepted, status_code = status_code,
     request_id = if (accepted) body$request else "",
