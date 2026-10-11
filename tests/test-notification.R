@@ -78,7 +78,16 @@ run_command <- function(command, args, expected_status = 0L) {
     stop(paste(command, "unexpected status", status, paste(output, collapse = "\n")), call. = FALSE)
   invisible(output)
 }
-shell_state <- function(command, ...) run_command("bash", c(state_helper, command, ...))
+shell_state <- function(command, ...) {
+  args <- c(...)
+  if (command == "persist") {
+    if (length(args) < 2L) args <- c(args, "origin")
+    if (length(args) < 3L) args <- c(args, "3")
+    # Fixtures are September dates; never depend on the machine's calendar.
+    args <- c(args, "2026-09-25")
+  }
+  run_command("bash", c(state_helper, command, args))
+}
 fixture <- function(text, name = "fixture.json") {
   path <- file.path(test_root, name)
   writeLines(text, path)
@@ -115,6 +124,7 @@ malformed <- c(
   '{"schema_version":1,"deliveries":[{}]}', '{"schema_version":1,"deliveries":null}',
   '{"schema_version":1,"schema_version":1,"deliveries":{}}',
   '{"schema_version":1,"deliveries":{"2026-09-22":[]}}',
+  '{"schema_version":1,"deliveries":{"2026-09-22":{}}}',
   '{"schema_version":1,"deliveries":{"2026-09-22":{"morning":null}}}',
   sub("2026-09-22", "2026-02-30", valid_json), sub("morning", "night", valid_json),
   sub('"request-1"', '""', valid_json), sub('"request-1"', '" \\t\\r\\n"', valid_json, fixed = TRUE),
@@ -253,7 +263,7 @@ Sys.chmod(hook, "0755")
 next_state <- record_notification_acceptance(partial, "2026-09-23", "morning", "next", "2026-09-23T03:00:00Z")
 next_path <- file.path(test_root, "next.json")
 write_notification_state(next_state, next_path, as.Date("2026-09-23"))
-run_command("bash", c(state_helper, "persist", next_path, "origin", "3"), 1L)
+run_command("bash", c(state_helper, "persist", next_path, "origin", "3", "2026-09-25"), 1L)
 assert_identical(length(readLines(counter)), 3L, "bounded push attempts")
 assert_identical(read_notification_state(paste0(next_path, ".accepted.json")), next_state, "push failure retains journal")
 writeLines(c("#!/usr/bin/env bash", sprintf("printf 'attempt\\n' >> %s", shQuote(counter)),
@@ -298,6 +308,26 @@ shell_state("persist", journal_only)
 shell_state("load", loaded)
 assert_identical(notification_was_accepted(read_notification_state(loaded), "2026-09-25", "morning"), TRUE, "journal-only recovery")
 
+# Unioning stale remote records and an accepted journal must not undo retention.
+# The working state is already pruned by R; the journal deliberately retains old
+# evidence. Recent journal-only acceptance and the exact cutoff must still survive.
+retention_path <- file.path(test_root, "retention.json")
+retention <- record_notification_acceptance(empty_notification_state(), "2026-09-23", "morning", "cutoff", "2026-09-23T03:00:00Z")
+retention <- record_notification_acceptance(retention, "2026-10-23", "morning", "today", "2026-10-23T03:00:00Z")
+write_notification_state(retention, retention_path, as.Date("2026-10-23"))
+stale_journal <- record_notification_acceptance(retention, "2026-09-22", "morning", "old-journal", "2026-09-22T03:00:00Z")
+stale_journal <- record_notification_acceptance(stale_journal, "2026-10-22", "afternoon", "recent-journal", "2026-10-22T13:00:00Z")
+jsonlite::write_json(stale_journal, paste0(retention_path, ".accepted.json"), auto_unbox = TRUE)
+run_command("bash", c(state_helper, "persist", retention_path, "origin", "3", "2026-10-23"))
+shell_state("load", loaded)
+persisted <- read_notification_state(loaded)
+assert_identical(notification_was_accepted(persisted, "2026-09-22", "morning"), FALSE, "remote and journal cannot resurrect old dates")
+assert_identical(notification_was_accepted(persisted, "2026-09-23", "morning"), TRUE, "retention includes cutoff day")
+assert_identical(notification_was_accepted(persisted, "2026-10-22", "afternoon"), TRUE, "retention preserves recent journal acceptance")
+assert_identical(notification_was_accepted(persisted, "2026-10-23", "morning"), TRUE, "retention preserves today")
+assert_identical(notification_was_accepted(read_notification_state(paste0(retention_path, ".accepted.json")), "2026-09-22", "morning"), TRUE, "retention does not erase recovery evidence")
+run_command("bash", c(state_helper, "persist", retention_path, "origin", "3", "2026-02-30"), 1L)
+
 run_command("bash", c(state_helper, "load", loaded, file.path(test_root, "nonexistent-remote")), 1L)
 assert_identical(notification_was_accepted(read_notification_state(loaded), "2026-09-23", "morning"), TRUE, "transport failure preserves loaded state")
 writeLines("malformed", file.path(repo, "notification-state.json"))
@@ -313,6 +343,11 @@ git("commit", "--quiet", "-m", "missing files")
 git("push", "--quiet", "--force", "origin", "HEAD:refs/heads/weather-notification-state")
 run_command("bash", c(state_helper, "load", loaded), 1L)
 assert_identical(notification_was_accepted(read_notification_state(loaded), "2026-09-25", "morning"), TRUE, "missing remote files cannot reset state")
+run_command("bash", c(state_helper, "persist", partial_path, new_remote, "3", "2026-10-23"))
+shell_state("load", loaded, new_remote)
+assert_identical(read_notification_state(loaded), empty_notification_state(), "retention can prune entire deliveries map")
+if (!grepl('"deliveries": \\{\\}', paste(readLines(loaded), collapse = " ")))
+  stop("Pruned remote state did not retain canonical empty object.", call. = FALSE)
 setwd(old_wd)
 unlink(test_root, recursive = TRUE)
 

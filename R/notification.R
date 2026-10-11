@@ -30,7 +30,7 @@ normalize_notification_state <- function(state) {
   if (!object(state$deliveries)) invalid()
   for (date in names(state$deliveries)) {
     slots <- state$deliveries[[date]]
-    if (!notification_date_valid(date) || !object(slots) ||
+    if (!notification_date_valid(date) || !object(slots) || !length(slots) ||
         any(!names(slots) %in% names(notification_slots))) invalid()
     for (record in slots) {
       if (!object(record) || !setequal(names(record), c("request_id", "accepted_at", "run_id")) ||

@@ -9,7 +9,7 @@ The workflow concurrency group remains `weather-pushover-reconciliation`.
 ## Accepted state
 
 Schema 1 contains exactly `schema_version: 1` and a `deliveries` map, keyed by
-valid Gregorian `YYYY-MM-DD` dates. Each date maps morning/afternoon slots to
+valid Gregorian `YYYY-MM-DD` dates. Each date maps one or both morning/afternoon slots to
 records with exactly these fields:
 
 ```json
@@ -21,7 +21,7 @@ ASCII space, tab, CR or LF. `accepted_at` is a valid date and timestamp with
 seconds and `Z` or a numeric timezone offset. Existing `legacy` IDs remain valid.
 Schema-1 empty `deliveries: []`, emitted by the old R writer, is accepted and
 normalized to `{}`. Nonempty arrays, duplicate keys, unknown fields/slots,
-invalid records and malformed JSON fail validation. Both implementations have
+invalid records, empty dated entries and malformed JSON fail validation. Both implementations have
 parity tests in `tests/test-notification.R`.
 
 Recognized legacy files contain unique `morning=DATE` and/or `afternoon=DATE`
@@ -44,12 +44,17 @@ Only HTTP 200 with numeric status 1 and a nonblank string request ID counts as
 Pushover API acceptance. Acceptance does not establish device delivery.
 
 Persistence fetches the latest state, validates it, merges missing accepted
-records, and pushes a commit whose parent is that snapshot. Existing remote
+records, prunes dates older than Copenhagen today minus 30 days, and pushes a
+commit whose parent is that snapshot. Pruning happens after merging remote,
+working-state and journal records, so stale history cannot resurrect expired
+dates; the cutoff date and recent journal-only records remain. Existing remote
 records win slot conflicts. A rejected push triggers another fetch and merge,
 up to three attempts without clock waiting. The helper uses a private Git index
 and does not change the checked-out branch. It retains legacy files on the state
 branch while adding canonical JSON. Artifacts contain only state/journal files
 that exist, never repository credentials or weather/Pushover keys.
+For deterministic tests, the optional fifth argument to `persist` is the
+Copenhagen date: `persist STATE_PATH REMOTE ATTEMPTS YYYY-MM-DD`.
 
 After exhausted persistence retries, the workflow fails and archives
 `notification-accepted-state-RUN_ID-RUN_ATTEMPT` for 30 days. Artifact recovery is

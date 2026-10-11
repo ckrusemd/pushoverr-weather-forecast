@@ -58,7 +58,7 @@ PY
     then error("schema") else . end |
     if all(.deliveries | to_entries[];
       (.key | valid_date) and
-      (.value | if type != "object" then false else
+      (.value | if type != "object" or length == 0 then false else
         all(to_entries[]; (.key == "morning" or .key == "afternoon") and (.value | record)) end))
     then . else error("records") end
   ' "$path" 2>/dev/null && return
@@ -149,8 +149,12 @@ merge_state() {
 }
 
 persist_state() {
-  local path="$1" remote="${2:-origin}" attempts="${3:-3}" workspace attempt parent rc tree commit blob
+  local path="$1" remote="${2:-origin}" attempts="${3:-3}" today="${4:-$(TZ=Europe/Copenhagen date +%F)}"
+  local workspace attempt parent rc tree commit blob keep_after
   [[ $attempts =~ ^[1-9][0-9]*$ && $attempts -le 5 ]] || { state_error invalid_retry_bound; return 1; }
+  [[ $today =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ && ${today:0:4} != 0000 ]] &&
+    [[ $(date -u -d "$today" +%F 2>/dev/null) == "$today" ]] || { state_error invalid_retention_date; return 1; }
+  keep_after=$(date -u -d "$today -30 days" +%F)
   [[ -f $path || -f $path.accepted.json ]] || { state_error accepted_state_missing; return 1; }
   workspace=$(mktemp -d)
   # Use a private index; never switch branches or stage repository credentials.
@@ -173,6 +177,12 @@ persist_state() {
     elif [[ -f $workspace/journal.json ]]; then
       mv "$workspace/journal.json" "$workspace/merged.json"
     fi
+    # Prune after all unions so neither the remote nor the journal resurrects
+    # records removed by the R writer. Keep the cutoff date itself, as R does.
+    jq --arg cutoff "$keep_after" \
+      '.deliveries |= with_entries(select(.key >= $cutoff))' \
+      "$workspace/merged.json" > "$workspace/pruned.json"
+    mv "$workspace/pruned.json" "$workspace/merged.json"
     if [[ -n $parent ]]; then
       GIT_INDEX_FILE="$workspace/index" git read-tree "$parent"
     else
@@ -204,7 +214,7 @@ if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
     validate) validate_state "$2" ;;
     load) load_state "$2" "${3:-origin}" ;;
     merge) merge_state "$2" "$3" ;;
-    persist) persist_state "$2" "${3:-origin}" "${4:-3}" ;;
+    persist) persist_state "$2" "${3:-origin}" "${4:-3}" "${5:-}" ;;
     *) state_error invalid_command; exit 1 ;;
   esac
 fi
