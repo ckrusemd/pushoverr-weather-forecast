@@ -48,11 +48,16 @@ env -u OPENWEATHERMAP_APIKEY -u PUSHOVER_APPKEY -u PUSHOVER_USERKEY \
 
 `publish-weather.yml` retains push-to-`master`, scheduled watchdog, and manual
 dispatch publishing. PRs use only the validation workflow. Production runs the
-same offline tests before exposing the weather API key to rendering, and clears
+same offline unit tests before exposing the weather API key to rendering, and clears
 `WEATHER_FIXTURE_PATH` for the production render. No Pushover key is supplied to
 publishing. Production rendering uses the dashboard preparation hook to obtain
 live weather. Use fixture validation to test changes; manual publishing deploys
 live weather.
+
+Validation also runs the dashboard's full, refreshed, standalone, and failure
+render scenarios when Quarto is available. Publishing sets `QUARTO_BIN` empty
+for its test step to skip those repeated fixture renders, then renders the live
+site once. All non-render tests still run in both workflows.
 
 ## Dependencies and timings
 

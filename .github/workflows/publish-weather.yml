@@ -93,6 +93,9 @@ jobs:
       - name: Run offline tests
         env:
           WEATHER_FIXTURE_PATH: ${{ github.workspace }}/tests/fixtures/weather.json
+          # Full fixture/standalone render scenarios run in validation; this
+          # job runs unit tests and then renders the live site once.
+          QUARTO_BIN: ''
         run: bash scripts/run-tests.sh
       - name: Validate weather access
         env:
