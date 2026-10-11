@@ -28,30 +28,43 @@ fetch_weather <- function(config = weather_config, api_key = require_weather_key
 }
 
 weather_description <- function(weather) {
-  if (length(weather) && length(weather[[1]]$description)) weather[[1]]$description else "Unavailable"
+  description <- if (length(weather)) weather[[1]]$description else NULL
+  if (length(description) == 1L && !is.na(description) && nzchar(description)) description else "Unavailable"
 }
 
 as_local_time <- function(seconds, tz = weather_config$timezone) as.POSIXct(seconds, origin = "1970-01-01", tz = tz)
 
 hourly_frame <- function(payload, tz = weather_config$timezone) {
+  empty <- data.frame(
+    time = as_local_time(numeric(), tz), temp = numeric(), feels_like = numeric(),
+    pop = numeric(), uv_index = numeric(), wind_speed = numeric(), clouds = numeric(),
+    humidity = numeric(), rain_mm = numeric(), description = character()
+  )
   rows <- lapply(payload$hourly, function(x) data.frame(
-    time = as_local_time(x$dt, tz), temp = x$temp, feels_like = x$feels_like,
-    pop = (x$pop %||% 0) * 100, uv_index = x$uvi %||% NA_real_, wind_speed = x$wind_speed, clouds = x$clouds,
+    time = as_local_time(x$dt %||% NA_real_, tz), temp = x$temp %||% NA_real_,
+    feels_like = x$feels_like %||% NA_real_, pop = (x$pop %||% NA_real_) * 100,
+    uv_index = x$uvi %||% NA_real_, wind_speed = x$wind_speed %||% NA_real_,
+    clouds = x$clouds %||% NA_real_,
     humidity = x$humidity %||% NA_real_, rain_mm = if (is.null(x$rain)) 0 else (x$rain$`1h` %||% 0),
     description = weather_description(x$weather), stringsAsFactors = FALSE
   ))
-  do.call(rbind, rows)
+  if (length(rows)) do.call(rbind, rows) else empty
 }
 
 `%||%` <- function(x, y) if (is.null(x)) y else x
 
 daily_frame <- function(payload, tz = weather_config$timezone) {
+  empty <- data.frame(
+    date = as.Date(character()), sunrise = as_local_time(numeric(), tz), sunset = as_local_time(numeric(), tz),
+    min_temp = numeric(), max_temp = numeric(), pop = numeric(), wind_speed = numeric(), description = character()
+  )
   rows <- lapply(payload$daily, function(x) data.frame(
-    date = as.Date(as_local_time(x$dt, tz)), sunrise = as_local_time(x$sunrise, tz), sunset = as_local_time(x$sunset, tz),
-    min_temp = x$temp$min, max_temp = x$temp$max, pop = (x$pop %||% 0) * 100,
-    wind_speed = x$wind_speed, description = weather_description(x$weather), stringsAsFactors = FALSE
+    date = as.Date(as_local_time(x$dt %||% NA_real_, tz), tz = tz),
+    sunrise = as_local_time(x$sunrise %||% NA_real_, tz), sunset = as_local_time(x$sunset %||% NA_real_, tz),
+    min_temp = x$temp$min %||% NA_real_, max_temp = x$temp$max %||% NA_real_, pop = (x$pop %||% NA_real_) * 100,
+    wind_speed = x$wind_speed %||% NA_real_, description = weather_description(x$weather), stringsAsFactors = FALSE
   ))
-  do.call(rbind, rows)
+  if (length(rows)) do.call(rbind, rows) else empty
 }
 
 outdoor_score <- function(hourly) {
@@ -71,6 +84,7 @@ relative_humidity_at <- function(temperature_c, relative_humidity, reference_c =
 }
 
 connected_hour_ranges <- function(hours) {
+  hours <- hours[is.finite(hours)]
   hours <- sort(unique(as.integer(hours)))
   if (!length(hours)) return("none")
   groups <- cumsum(c(TRUE, diff(hours) != 1))
@@ -79,21 +93,24 @@ connected_hour_ranges <- function(hours) {
 }
 
 format_signed_duration <- function(seconds) {
+  if (!length(seconds) || !is.finite(seconds)) return("Unavailable")
   sign <- if (seconds >= 0) "+" else "-"
   total_seconds <- round(abs(seconds))
   sprintf("%s%d:%02d", sign, total_seconds %/% 60, total_seconds %% 60)
 }
 
-sunrise_sunset_change <- function(config = weather_config) {
-  today <- as.Date(Sys.time(), tz = config$timezone)
-  sun <- suncalc::getSunlightTimes(date = c(today - 1, today), lat = config$lat,
+sunrise_sunset_change <- function(config = weather_config, now = Sys.time(),
+                                get_sunlight_times = suncalc::getSunlightTimes) {
+  today <- as.Date(now, tz = config$timezone)
+  sun <- get_sunlight_times(date = c(today - 1, today), lat = config$lat,
                                     lon = config$lon, tz = config$timezone)
   clock_seconds <- function(x) {
-    as.integer(format(x, "%H")) * 3600 +
-      as.integer(format(x, "%M")) * 60 + as.integer(format(x, "%S"))
+    as.integer(format(x, "%H", tz = config$timezone)) * 3600 +
+      as.integer(format(x, "%M", tz = config$timezone)) * 60 + as.integer(format(x, "%S", tz = config$timezone))
   }
   clock_delta <- function(previous, current) {
     delta <- clock_seconds(current) - clock_seconds(previous)
+    if (!is.finite(delta)) return(NA_real_)
     if (delta > 12 * 3600) delta <- delta - 24 * 3600
     if (delta < -12 * 3600) delta <- delta + 24 * 3600
     delta
@@ -121,8 +138,9 @@ fetch_historical_precipitation <- function(date, config = weather_config,
   }, numeric(1)), na.rm = TRUE)
 }
 
-best_outdoor_hour <- function(hourly) {
-  today <- hourly[as.Date(hourly$time) == as.Date(Sys.time(), tz = weather_config$timezone), , drop = FALSE]
+best_outdoor_hour <- function(hourly, now = Sys.time(), config = weather_config) {
+  hourly <- hourly[which(!is.na(hourly$time)), , drop = FALSE]
+  today <- hourly[which(as.Date(hourly$time, tz = config$timezone) == as.Date(now, tz = config$timezone)), , drop = FALSE]
   if (!nrow(today)) today <- hourly
   today$score <- outdoor_score(today)
   today[which.max(today$score), , drop = FALSE]
@@ -130,44 +148,76 @@ best_outdoor_hour <- function(hourly) {
 
 notification_text <- function(payload, config = weather_config,
                               precipitation_yesterday_mm = NA_real_,
-                              delivery_slot = "morning") {
+                              delivery_slot = "morning", now = Sys.time()) {
   if (!delivery_slot %in% c("morning", "afternoon")) stop("Invalid delivery slot.", call. = FALSE)
-  daily_forecast <- daily_frame(payload, config$timezone)
-  daily <- daily_forecast[1, , drop = FALSE]
-  hourly <- hourly_frame(payload, config$timezone)
-  today <- hourly[as.Date(hourly$time) == daily$date, , drop = FALSE]
-  if (!nrow(today)) today <- hourly
-  at_eight <- today[which.min(abs(as.numeric(difftime(today$time, as.POSIXct(paste(daily$date, "08:00:00"), tz = config$timezone), units = "secs")))), , drop = FALSE]
-  peak_pop <- today[which.max(today$pop), , drop = FALSE]
-  peak_uv <- today[which.max(ifelse(is.na(today$uv_index), -Inf, today$uv_index)), , drop = FALSE]
-  today$rh_at_21c <- relative_humidity_at(today$temp, today$humidity)
-  dry_hours <- today$rh_at_21c < 60 & as.integer(format(today$time, "%H")) >= 7 & as.integer(format(today$time, "%H")) <= 22
-  sun <- sunrise_sunset_change(config)
-  rain_next_day <- sum(head(hourly$rain_mm, 24), na.rm = TRUE)
+  timezone <- config$timezone
+  date <- as.Date(now, tz = timezone)
+  hourly <- hourly_frame(payload, timezone)
+  hourly <- hourly[order(hourly$time, na.last = TRUE), , drop = FALSE]
+  today <- hourly[which(as.Date(hourly$time, tz = timezone) == date), , drop = FALSE]
+  daily <- daily_frame(payload, timezone)
+  daily <- daily[which(daily$date == date), , drop = FALSE]
+
+  number <- function(value, pattern) {
+    if (length(value) && is.finite(value[[1]])) sprintf(pattern, value[[1]]) else "Unavailable"
+  }
+  clock <- function(time) {
+    if (length(time) && !is.na(time[[1]])) format(time[[1]], "%H:%M", tz = timezone) else "Unavailable"
+  }
+  peak <- function(frame, column, pattern) {
+    available <- frame[which(is.finite(frame[[column]])), , drop = FALSE]
+    if (!nrow(available)) return("Unavailable")
+    row <- available[which.max(available[[column]]), , drop = FALSE]
+    sprintf("%s at %s", number(row[[column]], pattern), clock(row$time))
+  }
+  high <- function(values) {
+    values <- values[is.finite(values)]
+    if (length(values)) number(max(values), "%.0f°C") else "Unavailable"
+  }
+  dry_ranges <- function(frame) {
+    humidity <- relative_humidity_at(frame$temp, frame$humidity)
+    if (!any(is.finite(humidity))) return("Unavailable")
+    hours <- as.integer(format(frame$time, "%H", tz = timezone))
+    connected_hour_ranges(hours[which(is.finite(humidity) & humidity < 60 & hours >= 7 & hours <= 22)])
+  }
+  weather_line <- function(row) {
+    if (!nrow(row)) return("Weather: Unavailable")
+    sprintf("Weather at %s: %s, %s (feels %s)", clock(row$time), row$description[[1]],
+            number(row$temp, "%.0f°C"), number(row$feels_like, "%.0f°C"))
+  }
+  sun <- sunrise_sunset_change(config, now = now)
+  next_day <- head(hourly[which(hourly$time >= now), , drop = FALSE], 24)
+  rain <- if (nrow(next_day) && all(is.finite(next_day$rain_mm))) sum(next_day$rain_mm) else NA_real_
+  rain_text <- number(rain, "%.1f mm")
+
   if (delivery_slot == "afternoon") {
-    now <- as.POSIXct(Sys.time(), tz = config$timezone)
-    remaining <- today[today$time >= now, , drop = FALSE]
-    if (!nrow(remaining)) remaining <- tail(today, 1)
-    peak_pop_remaining <- remaining[which.max(remaining$pop), , drop = FALSE]
-    peak_uv_remaining <- remaining[which.max(ifelse(is.na(remaining$uv_index), -Inf, remaining$uv_index)), , drop = FALSE]
-    remaining$rh_at_21c <- relative_humidity_at(remaining$temp, remaining$humidity)
-    dry_remaining <- remaining$rh_at_21c < 60 & as.integer(format(remaining$time, "%H")) <= 22
-    return(sprintf(
-      "Weather now: %s, %.0f°C (feels %.0f°C)\nRest-of-day high: %.0f°C\nPoP remaining: %.0f%% at %s\nUV remaining tops at: %.1f at %s\nCloud cover now: %.0f%%\nSunset: %s (%s)\nRain next 24h: %.1f mm\nRH below 60%% at 21°C: %s",
-      remaining$description[1], remaining$temp[1], remaining$feels_like[1],
-      max(remaining$temp, na.rm = TRUE), peak_pop_remaining$pop, format(peak_pop_remaining$time, "%H:%M"),
-      peak_uv_remaining$uv_index, format(peak_uv_remaining$time, "%H:%M"), remaining$clouds[1],
-      format(sun$sunset, "%H:%M"), sun$sunset_change, sum(head(remaining$rain_mm, 24), na.rm = TRUE),
-      connected_hour_ranges(as.integer(format(remaining$time[dry_remaining], "%H")))
+    remaining <- today[which(today$time >= now), , drop = FALSE]
+    return(paste(
+      weather_line(head(remaining, 1)),
+      paste("Rest-of-day high:", high(remaining$temp)),
+      paste("PoP remaining:", peak(remaining, "pop", "%.0f%%")),
+      paste("UV remaining tops at:", peak(remaining, "uv_index", "%.1f")),
+      paste("Cloud cover:", number(remaining$clouds, "%.0f%%")),
+      sprintf("Sunset: %s (%s)", clock(sun$sunset), sun$sunset_change),
+      paste("Rain next 24h:", rain_text),
+      paste("RH below 60% at 21°C:", dry_ranges(remaining)),
+      sep = "\n"
     ))
   }
-  precipitation_text <- if (is.finite(precipitation_yesterday_mm)) sprintf("%.1f mm", precipitation_yesterday_mm) else "Unavailable"
-  sprintf(
-    "Weather at 08:00: %s, %.0f°C (feels %.0f°C)\nToday's high: %.0f°C\nPoP: %.0f%% at %s\nUV index tops at: %.1f at %s\nCloud cover: %.0f%%\nSunrise: %s (%s)\nSunset: %s (%s)\nPrecipitation yesterday: %s\nRain next 24h: %.1f mm\nRH below 60%% at 21°C: %s",
-    at_eight$description, at_eight$temp, at_eight$feels_like,
-    daily$max_temp, peak_pop$pop, format(peak_pop$time, "%H:%M"), peak_uv$uv_index, format(peak_uv$time, "%H:%M"),
-    at_eight$clouds, format(sun$sunrise, "%H:%M"), sun$sunrise_change,
-    format(sun$sunset, "%H:%M"), sun$sunset_change, precipitation_text, rain_next_day,
-    connected_hour_ranges(as.integer(format(today$time[dry_hours], "%H")))
+
+  target <- as.POSIXct(paste(date, "08:00:00"), tz = timezone)
+  at_eight <- today[which.min(abs(as.numeric(difftime(today$time, target, units = "secs")))), , drop = FALSE]
+  paste(
+    weather_line(at_eight),
+    paste("Today's high:", number(daily$max_temp, "%.0f°C")),
+    paste("PoP:", peak(today, "pop", "%.0f%%")),
+    paste("UV index tops at:", peak(today, "uv_index", "%.1f")),
+    paste("Cloud cover:", number(at_eight$clouds, "%.0f%%")),
+    sprintf("Sunrise: %s (%s)", clock(sun$sunrise), sun$sunrise_change),
+    sprintf("Sunset: %s (%s)", clock(sun$sunset), sun$sunset_change),
+    paste("Precipitation yesterday:", number(precipitation_yesterday_mm, "%.1f mm")),
+    paste("Rain next 24h:", rain_text),
+    paste("RH below 60% at 21°C:", dry_ranges(today)),
+    sep = "\n"
   )
 }
