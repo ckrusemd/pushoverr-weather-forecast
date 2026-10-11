@@ -17,9 +17,8 @@ on:
   push:
     branches: [master]
   schedule:
-    # Remove the target cron only after the hosted trigger is verified/enabled.
-    # The hourly Pages watchdog remains independent from notifications.
-    - cron: "5 3,4 * * *"
+    # Free hosted triggers own 05:00 Copenhagen and 05:10/05:30 retries.
+    # Keep the hourly Pages recovery watchdog independent from notifications.
     - cron: "17 * * * *"
 
 permissions:
