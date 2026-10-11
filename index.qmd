@@ -4,11 +4,13 @@ title: "Today at a glance"
 
 ```{r}
 source("R/weather.R")
-payload <- fetch_weather()
+source("R/dashboard.R")
+snapshot <- read_dashboard_snapshot()
+payload <- snapshot$payload
 current <- payload$current
-daily <- daily_frame(payload)[1, ]
-hourly <- hourly_frame(payload)
-best <- best_outdoor_hour(hourly)
+daily <- dashboard_daily(snapshot)[1, ]
+hourly <- hourly_frame(payload, snapshot$timezone)
+best <- dashboard_best_hour(hourly, dashboard_now(snapshot), snapshot$timezone)
 ```
 
 ::: {.hero}

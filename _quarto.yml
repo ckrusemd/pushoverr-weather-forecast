@@ -1,6 +1,16 @@
 project:
   type: website
   output-dir: _site
+  execute-dir: project
+  pre-render: Rscript --vanilla scripts/prepare-dashboard.R
+  resources:
+    - "!.weather-build/**"
+    - "!tests/**"
+    - "!R/**"
+    - "!scripts/**"
+    - "!.env*"
+    - "!.Renviron"
+    - "!Renviron.site"
   render:
     - index.qmd
     - forecast.qmd
@@ -28,6 +38,8 @@ format:
     smooth-scroll: true
 
 execute:
+  freeze: false
+  cache: false
   echo: false
   warning: false
   message: false
