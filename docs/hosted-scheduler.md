@@ -79,15 +79,30 @@ Ordinary manual force/dry-run remain available with it disabled.
    hosted jobs. Failure alerts fire after the first failed HTTP request, on
    subsequent recovery, and on automatic disabling. Alerts go only to the
    account's built-in email channel; response history is saved.
-8. After hosted dispatches are verified and enabled, remove only the first
-   schedule entry (`5 3,4,13,14 * * *` for weather; `5 3,4 * * *` for Pages).
-   Keep `17 * * * *` in both workflows. Until activation is complete, the original
-   target entries intentionally remain to avoid a scheduling gap.
+8. Keep `17 * * * *` in both workflows as the native recovery watchdog.
+   The redundant dual-UTC target schedules were removed only after hosted
+   dispatches passed and both daily hosted jobs were enabled.
 
 Settings follow the [cron-job.org API](https://docs.cron-job.org/rest-api.html).
 GitHub dispatch requires [Actions write permission](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event).
 
 ## Operation and credential renewal
+
+### Active deployment checklist
+
+- Hosted weather job: `8625739`; hosted Pages job: `8625746`.
+- Both daily schedules activated on 11 October 2026 after an actual provider
+  execution test at 21:03 Europe/Copenhagen. Both dispatches returned HTTP 200;
+  provider request initiation was about eight seconds after the target minute.
+- [Weather test](https://github.com/ckrusemd/pushoverr-weather-forecast/actions/runs/38166378570)
+  and [Pages test](https://github.com/ckrusemd/pushoverr-weather-forecast/actions/runs/38166378774)
+  succeeded. Both gates ran for five seconds and skipped already-completed work;
+  no duplicate Pushover delivery or scheduled Pages rebuild was performed.
+- GitHub reported token expiry as `2027-10-10 22:00:00 UTC`, which is
+  **11 October 2027 at 00:00 Europe/Copenhagen**. Renew by **11 September 2027**.
+  These are operational dates, not credentials; update them on rotation.
+
+### Status
 
 ```bash
 python3 scripts/configure-hosted-scheduler.py status

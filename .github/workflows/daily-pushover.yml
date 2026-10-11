@@ -3,9 +3,8 @@ run-name: Weather Pushover reconciliation • ${{ inputs.dispatch_id || github.e
 
 on:
   schedule:
-    # Retain target crons until the free hosted trigger is verified and enabled.
-    # Then remove the first entry; keep the hourly recovery watchdog.
-    - cron: "5 3,4,13,14 * * *"
+    # Free hosted triggers own 05:00/15:00 Copenhagen slots and :10/:30 retries.
+    # GitHub cron is only an hourly state-aware recovery watchdog.
     - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
