@@ -36,7 +36,9 @@ jobs:
             if git ls-remote --exit-code --heads origin refs/heads/weather-pages-state > /dev/null; then
               git fetch origin weather-pages-state:refs/remotes/origin/weather-pages-state
               pages_sent="$(git show origin/weather-pages-state:last_deployment_date)"
-              if [[ ! "$pages_sent" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+              if [[ ! "$pages_sent" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] ||
+                ! canonical_date="$(TZ=Europe/Copenhagen date -d "$pages_sent" +%F 2>/dev/null)" ||
+                [[ "$canonical_date" != "$pages_sent" ]]; then
                 echo "Deployment state contains an invalid date; refusing to reset it." >&2
                 exit 1
               fi
@@ -140,7 +142,9 @@ jobs:
           if git ls-remote --exit-code --heads origin refs/heads/weather-pages-state > /dev/null; then
             git fetch origin weather-pages-state:refs/remotes/origin/weather-pages-state
             recorded_date="$(git show origin/weather-pages-state:last_deployment_date)"
-            if [[ ! "$recorded_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+            if [[ ! "$recorded_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] ||
+              ! canonical_date="$(TZ=Europe/Copenhagen date -d "$recorded_date" +%F 2>/dev/null)" ||
+              [[ "$canonical_date" != "$recorded_date" ]]; then
               echo "Deployment state contains an invalid date; refusing to reset it." >&2
               exit 1
             fi

@@ -24,12 +24,12 @@ these credentials before starting tests. Tests and rendering must use fixtures
 or injected transports; they must not contact weather or notification APIs.
 Installing CI tools and R dependencies can require network access.
 
-The dashboard preparation PR supplies the fixture and the
+PR 3 (dashboard preparation) supplies the fixture and the
 `Rscript scripts/prepare-dashboard.R` Quarto pre-render hook. Validation checks
 that those files exist before rendering; it does not skip rendering while the
 dependency is missing. This draft PR can therefore fail fixture rendering until
-the coordinator rebases it onto that PR. The coordinator verifies the integrated
-fixture render before marking the PR ready.
+the coordinator rebases it onto PR 3. Full fixture validation waits for PR 3.
+The coordinator verifies the integrated fixture render before marking the PR ready.
 
 To run the tests locally from any directory:
 
@@ -77,8 +77,11 @@ eligible at 05:00 local time. Successful deployment records that timezone's date
 in the existing `weather-pages-state` branch and `last_deployment_date` file.
 An unchanged staged date produces no commit or push. Only a confirmed absent
 remote branch initializes state; remote lookup, fetch, missing-file, and invalid
-date errors fail rather than silently resetting history. Recording uses a
-normal push, so an external concurrent update cannot be overwritten by force.
+date errors fail rather than silently resetting history. Both state readers
+require `YYYY-MM-DD` format and a successful GNU `date -d` parse whose canonical
+`%F` output equals the stored value, rejecting impossible calendar dates.
+Recording uses a normal push, so an external concurrent update cannot be
+overwritten by force.
 The production `weather-pages` mutex remains independent from validation.
 Notification slot timing, legacy notification state, and dispatch modes are
 handled by the separate notification workflow.
