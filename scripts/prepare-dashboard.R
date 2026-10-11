@@ -1,0 +1,6 @@
+project_dir <- Sys.getenv("QUARTO_PROJECT_DIR", unset = ".")
+setwd(project_dir)
+source("R/weather.R")
+source("R/dashboard.R")
+prepare_dashboard_snapshot()
+cat("Prepared dashboard weather snapshot.\n")

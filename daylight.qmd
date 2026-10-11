@@ -4,8 +4,9 @@ title: "Daylight"
 
 ```{r}
 source("R/weather.R")
-payload <- fetch_weather()
-daily <- daily_frame(payload)
+source("R/dashboard.R")
+snapshot <- read_dashboard_snapshot()
+daily <- dashboard_daily(snapshot)
 daily$daylight_hours <- as.numeric(difftime(daily$sunset, daily$sunrise, units = "hours"))
 ```
 

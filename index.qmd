@@ -4,11 +4,13 @@ title: "Today at a glance"
 
 ```{r}
 source("R/weather.R")
-payload <- fetch_weather()
+source("R/dashboard.R")
+snapshot <- read_dashboard_snapshot()
+payload <- snapshot$payload
 current <- payload$current
-daily <- daily_frame(payload)[1, ]
-hourly <- hourly_frame(payload)
-best <- best_outdoor_hour(hourly)
+daily <- dashboard_daily(snapshot)[1, ]
+hourly <- hourly_frame(payload, snapshot$timezone)
+best <- dashboard_best_hour(hourly, dashboard_now(snapshot), snapshot$timezone)
 ```
 
 ::: {.hero}
@@ -38,9 +40,9 @@ Wind `r sprintf("%.0f m/s", daily$wind_speed)`
 :::
 ::: {.metric}
 ## Best outside
-`r format(best$time, "%H:%M")`
+`r if (nrow(best) && is.finite(best$score[1])) format(best$time[1], "%H:%M", tz = snapshot$timezone) else "Unavailable"`
 
-Score `r round(best$score)` / 100
+Score `r if (nrow(best) && is.finite(best$score[1])) sprintf("%.0f / 100", best$score[1]) else "Unavailable"`
 :::
 :::
 

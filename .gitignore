@@ -11,3 +11,5 @@ Renviron.site
 credentials*.json
 secrets*.json
 _site/
+.weather-build/
+.quarto/
