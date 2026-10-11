@@ -152,8 +152,8 @@ invisible(file.symlink(file.path(test_root, "absent-target"), broken_link))
 expect_error(read_notification_state(broken_link), "broken symlink R")
 run_command("bash", c(state_helper, "validate", broken_link), expected_status = 1L)
 
-gate <- function(path, date, minute, event = "schedule", mode = "reconcile") {
-  output <- run_command("bash", c(gate_helper, path, event, mode, "morning", date, as.character(minute)))
+gate <- function(path, date, minute, event = "schedule", mode = "reconcile", scheduled_delivery = "false") {
+  output <- run_command("bash", c(gate_helper, path, event, mode, "morning", date, as.character(minute), scheduled_delivery))
   result <- jsonlite::fromJSON(paste(output, collapse = "\n"), simplifyVector = TRUE)
   result$due <- as.character(unlist(result$due))
   result
@@ -166,6 +166,9 @@ for (date in c("2026-01-22", "2026-07-22", "2026-03-29", "2026-10-25")) {
     assert_identical(result$minute, minute, "Copenhagen gate minutes")
     assert_identical(result$due, due_notification_slots(empty_notification_state(), now), "CET/CEST gate parity")
     assert_identical(result$notify, length(result$due) > 0L, "scheduled gate decision")
+    external <- gate(empty_path, date, minute, "workflow_dispatch", scheduled_delivery = "true")
+    assert_identical(external$due, result$due, "external CET/CEST due parity")
+    assert_identical(external$notify, result$notify, "external scheduled gate decision")
   }
 }
 for (mode in c("reconcile", "force", "dry-run"))
@@ -175,6 +178,15 @@ assert_identical(gate(valid_path, "2026-09-22", 900L)$due, "afternoon", "accepte
 complete_path <- fixture(jsonlite::toJSON(state, auto_unbox = TRUE), "complete.json")
 assert_identical(gate(complete_path, "2026-09-22", 1439L)$reason, "no_slots_due", "structured skip reason")
 assert_identical(gate(complete_path, "2026-09-22", 1439L)$notify, FALSE, "completed day skips R")
+assert_identical(gate(complete_path, "2026-09-22", 1439L, "workflow_dispatch", scheduled_delivery = "true")$notify,
+                 FALSE, "external duplicate skips R")
+assert_identical(gate(valid_path, "2026-09-22", 900L, "workflow_dispatch", scheduled_delivery = "true")$due,
+                 "afternoon", "external partial success recovery")
+for (mode in c("force", "dry-run", "scheduled"))
+  run_command("bash", c(gate_helper, empty_path, "workflow_dispatch", mode, "morning", "2026-09-22", "300", "true"), 1L)
+run_command("bash", c(gate_helper, empty_path, "workflow_dispatch", "reconcile", "morning", "2026-09-22", "300", "invalid"), 1L)
+run_command("bash", c(gate_helper, file.path(test_root, "invalid-1.json"), "workflow_dispatch", "reconcile",
+                      "morning", "2026-09-22", "300", "true"), 1L)
 summary_path <- file.path(test_root, "summary")
 output_path <- file.path(test_root, "outputs")
 old_summary <- Sys.getenv("GITHUB_STEP_SUMMARY", unset = NA_character_)

@@ -2,7 +2,10 @@
 
 The gate and sender use `Europe/Copenhagen` dates and minutes since midnight.
 Morning becomes due at minute 300 (05:00), afternoon at minute 900 (15:00).
-Scheduled checks with no due slots skip the R job. Manual reconcile, force and
+Scheduled checks, including external dispatches with `scheduled_delivery: true`,
+skip the R job when no slots are due. External scheduled dispatches require
+reconcile mode. See [free hosted scheduler setup](hosted-scheduler.md).
+Manual reconcile, force and
 dry-run dispatches still run; force and dry-run do not persist slot acceptance.
 The workflow concurrency group remains `weather-pushover-reconciliation`.
 

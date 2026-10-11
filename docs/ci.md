@@ -9,7 +9,9 @@ reconciliation. Validation never deploys or sends notifications.
 The validation job runs `bash scripts/run-tests.sh`, then `quarto render` for the
 complete site declared in `_quarto.yml`. The runner checks every `scripts/*.sh`
 and `tests/test-*.sh` with `bash -n`, runs every `tests/test-*.R` with
-`Rscript --vanilla`, and executes shell helper tests in `tests/test-*.sh`.
+`Rscript --vanilla`, and executes shell helper tests in `tests/test-*.sh` and
+offline Python tests in `tests/test-*.py`. Python tests use mocked provider
+transports and temporary local Git repositories, never live scheduler calls.
 It fails on the first error or if there are no R tests. Feature-specific tests
 stay in separate files; adding a matching file automatically includes it in CI.
 Operational scripts such as
@@ -51,7 +53,10 @@ dispatch publishing. PRs use only the validation workflow. Production runs the
 same offline unit tests before exposing the weather API key to rendering, and clears
 `WEATHER_FIXTURE_PATH` for the production render. No Pushover key is supplied to
 publishing. Production rendering uses the dashboard preparation hook to obtain
-live weather. Use fixture validation to test changes; manual publishing deploys
+live weather. External dispatches with `scheduled_delivery: true` use the same
+daily gate as cron; ordinary manual publishing stays unconditional.
+See [free hosted scheduler setup](hosted-scheduler.md).
+Use fixture validation to test changes; manual publishing deploys
 live weather.
 
 Validation also runs the dashboard's full, refreshed, standalone, and failure
