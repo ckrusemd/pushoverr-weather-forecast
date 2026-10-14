@@ -118,18 +118,64 @@ read_dashboard_snapshot <- function(path = dashboard_snapshot_path(), now = Sys.
 dashboard_now <- function(snapshot) as_local_time(snapshot$render_now, snapshot$timezone)
 
 dashboard_daily <- function(snapshot) {
-  daily_frame(snapshot$payload, snapshot$timezone)
+  daily <- daily_frame(snapshot$payload, snapshot$timezone)
+  today <- as.Date(dashboard_now(snapshot), tz = snapshot$timezone)
+  daily <- daily[which(daily$date >= today & daily$date < today + 7), , drop = FALSE]
+  head(daily[order(daily$date), , drop = FALSE], 7)
+}
+
+dashboard_today <- function(snapshot) {
+  daily <- dashboard_daily(snapshot)
+  head(daily[which(daily$date == as.Date(dashboard_now(snapshot), tz = snapshot$timezone)), , drop = FALSE], 1)
+}
+
+dashboard_hourly <- function(hourly, now, hours = 48) {
+  times <- as.numeric(hourly$time)
+  remaining <- hourly[which(times >= as.numeric(now) & times < as.numeric(now) + hours * 3600), , drop = FALSE]
+  remaining[order(remaining$time), , drop = FALSE]
 }
 
 dashboard_best_hour <- function(hourly, now, tz = weather_config$timezone) {
-  best_outdoor_hour(hourly, now = now,
-                    config = utils::modifyList(weather_config, list(timezone = tz)))
+  # Keep notification helpers unchanged: the dashboard recommends remaining hours today.
+  remaining <- dashboard_hourly(hourly, now)
+  remaining <- remaining[which(as.Date(remaining$time, tz = tz) == as.Date(now, tz = tz)), , drop = FALSE]
+  remaining$score <- outdoor_score(remaining)
+  remaining <- remaining[which(is.finite(remaining$score)), , drop = FALSE]
+  remaining[which.max(remaining$score), , drop = FALSE]
+}
+
+dashboard_number <- function(value, pattern) {
+  if (length(value) && is.finite(value[[1]])) sprintf(pattern, value[[1]]) else "Unavailable"
+}
+
+dashboard_clock <- function(value, tz = weather_config$timezone) {
+  if (length(value) && !is.na(value[[1]])) format(value[[1]], "%H:%M", tz = tz) else "Unavailable"
+}
+
+dashboard_freshness <- function(snapshot) {
+  stamp <- function(time) format(time, "%Y-%m-%d %H:%M %Z", tz = snapshot$timezone)
+  sprintf("Observed %s · Forecast as of %s (Europe/Copenhagen).",
+          stamp(as_local_time(snapshot$payload$current$dt, snapshot$timezone)), stamp(dashboard_now(snapshot)))
+}
+
+dashboard_chart_theme <- function() {
+  ggplot2::theme_minimal(base_size = 13) +
+    ggplot2::theme(
+      text = ggplot2::element_text(colour = "#e6edf8"),
+      axis.text = ggplot2::element_text(colour = "#e6edf8"),
+      panel.grid = ggplot2::element_line(colour = "#334155"),
+      panel.grid.minor = ggplot2::element_blank(),
+      plot.background = ggplot2::element_rect(fill = "#172033", colour = NA),
+      panel.background = ggplot2::element_rect(fill = "#172033", colour = NA),
+      legend.position = "bottom", legend.key.width = grid::unit(1.5, "cm")
+    )
 }
 
 dashboard_heatmap_data <- function(hourly, now, tz = weather_config$timezone) {
   hours <- as.integer(format(hourly$time, "%H", tz = tz))
-  heat <- hourly[as.Date(hourly$time, tz = tz) == as.Date(now, tz = tz) &
-                   hours >= 7 & hours <= 22, , drop = FALSE]
+  heat <- hourly[which(as.numeric(hourly$time) >= as.numeric(now) & as.Date(hourly$time, tz = tz) == as.Date(now, tz = tz) &
+                        hours >= 7 & hours <= 22), , drop = FALSE]
+  heat <- heat[order(heat$time), , drop = FALSE]
   columns <- c("Temperature °C" = "temp", "PoP %" = "pop", "Rain mm" = "rain_mm",
                "Cloud cover %" = "clouds", "UV index" = "uv_index", "Wind m/s" = "wind_speed")
   heat_long <- do.call(rbind, lapply(names(columns), function(label) {

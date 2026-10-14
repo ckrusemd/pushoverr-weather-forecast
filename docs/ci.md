@@ -6,8 +6,10 @@ credentials, and cancels superseded runs for the same PR or event/ref. Its
 concurrency group is separate from production Pages publishing and notification
 reconciliation. Validation never deploys or sends notifications.
 
-The validation job runs `bash scripts/run-tests.sh`, then `quarto render` for the
-complete site declared in `_quarto.yml`. The runner checks every `scripts/*.sh`
+The validation job explicitly sets `QUARTO_BIN` to the installed executable and
+runs `bash scripts/run-tests.sh`. The dashboard regression suite renders the
+complete site declared in `_quarto.yml` once, then exercises standalone renders.
+There is no additional full render after that suite. The runner checks every `scripts/*.sh`
 and `tests/test-*.sh` with `bash -n`, runs every `tests/test-*.R` with
 `Rscript --vanilla`, and executes shell helper tests in `tests/test-*.sh` and
 offline Python tests in `tests/test-*.py`. Python tests use mocked provider
@@ -31,8 +33,8 @@ to prepare dashboard data. With `WEATHER_FIXTURE_PATH` set, preparation uses the
 specified fixture without production credentials or weather API calls.
 `tests/fixtures/weather.json` must be readable, and the preparation script and
 Quarto pre-render hook must be present. Validation fails if a required file is
-missing or preparation fails; a successful test run must still be followed by
-the complete fixture render.
+missing or preparation fails. CI requires Quarto rather than silently skipping
+render regressions.
 
 To run the tests locally from any directory:
 
@@ -59,10 +61,14 @@ See [free hosted scheduler setup](hosted-scheduler.md).
 Use fixture validation to test changes; manual publishing deploys
 live weather.
 
-Validation also runs the dashboard's full, refreshed, standalone, and failure
-render scenarios when Quarto is available. Publishing sets `QUARTO_BIN` empty
-for its test step to skip those repeated fixture renders, then renders the live
-site once. All non-render tests still run in both workflows.
+Validation runs the dashboard's full, standalone refresh, midnight, late-night,
+missing-data, publication-exclusion, and preparation-failure render scenarios.
+The suite also checks Copenhagen dates against UTC inputs, a different host
+timezone, and both daylight-saving transitions offline. A dashboard-specific
+best-hour helper only recommends remaining hours today; shared notification
+helpers retain their behavior. Publishing sets `QUARTO_BIN` empty for its test
+step to skip fixture renders, then renders the live site once. All non-render
+tests still run in both workflows.
 
 ## Dependencies and timings
 

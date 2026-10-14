@@ -10,12 +10,25 @@ daily <- dashboard_daily(snapshot)
 daily$daylight_hours <- as.numeric(difftime(daily$sunset, daily$sunrise, units = "hours"))
 ```
 
+`r dashboard_freshness(snapshot)`
+
+Scroll the chart horizontally on smaller screens.
+
 ## Light for the week ahead
 
+::: {.chart-scroll tabindex="0" role="region" aria-label="Scrollable forecast chart"}
 ```{r}
+#| results: asis
+#| fig-alt: "Hours between sunrise and sunset for the upcoming Copenhagen forecast dates."
 library(ggplot2)
-ggplot(daily, aes(date, daylight_hours)) + geom_col(fill = "#fbbf24") +
-  labs(x = NULL, y = "Hours between sunrise and sunset") + theme_minimal(base_size = 12)
+if (!nrow(daily)) {
+  cat("No daylight forecast is available from today.\n")
+} else {
+  print(ggplot(daily, aes(date, daylight_hours)) + geom_col(fill = "#fbbf24") +
+    scale_x_date(date_labels = "%a\n%d %b", date_breaks = "1 day") +
+    labs(x = NULL, y = "Daylight hours") + dashboard_chart_theme())
+}
 ```
+:::
 
-The original detailed sun and seasonal analysis remains preserved in `weather_pushoverr.Rmd` while this Quarto view becomes the published, daily dashboard.
+Sunrise and sunset use Copenhagen local time. The outlook starts on `r format(dashboard_now(snapshot), "%Y-%m-%d", tz = snapshot$timezone)`.

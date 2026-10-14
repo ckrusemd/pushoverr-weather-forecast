@@ -47,13 +47,13 @@ jobs:
           dependencies: 'NA'
           install-quarto: false
           install-pandoc: false
-      - name: Run offline tests
-        run: bash scripts/run-tests.sh
-      - name: Render complete site from fixture
+      - name: Run offline tests and render regressions
         shell: bash
         run: |
           set -euo pipefail
           test -r "$WEATHER_FIXTURE_PATH"
           test -f scripts/prepare-dashboard.R
           test -z "$OPENWEATHERMAP_APIKEY$PUSHOVER_APPKEY$PUSHOVER_USERKEY"
-          quarto render
+          quarto_bin="$(command -v quarto)"
+          export QUARTO_BIN="$quarto_bin"
+          bash scripts/run-tests.sh
