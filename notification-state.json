@@ -270,6 +270,11 @@
         "accepted_at": "2026-10-15T03:02:16Z",
         "request_id": "6efdec4c-08d4-47da-ba06-53b09c9c78d6",
         "run_id": "38674013726"
+      },
+      "afternoon": {
+        "accepted_at": "2026-10-15T13:02:51Z",
+        "request_id": "44bc5e49-0af6-48ba-973d-70d262733fc8",
+        "run_id": "38739149314"
       }
     }
   }
