@@ -84,11 +84,15 @@ jobs:
           r-version: '4.6.1'
       - uses: r-lib/actions/setup-r-dependencies@465b7d8e732ca3921382b1674c59bada9cbf3399 # v2
         with:
-          cache-version: 2
-          extra-packages: |
+          cache-version: weather-notification-chart-1
+          packages: |
             any::httr
             any::jsonlite
             any::suncalc
+            any::ggplot2
+          dependencies: 'NA'
+          install-quarto: false
+          install-pandoc: false
       - name: Reconcile Pushover deliveries
         id: notify
         continue-on-error: true

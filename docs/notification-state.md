@@ -9,6 +9,35 @@ Manual reconcile, force and
 dry-run dispatches still run; force and dry-run do not persist slot acceptance.
 The workflow concurrency group remains `weather-pushover-reconciliation`.
 
+## Forecast chart attachment
+
+Morning and afternoon messages retain their text and add one 2×2 ggplot2 PNG:
+temperature (top left), UV index (top right), hourly rain bars with a PoP line
+(bottom left), and cloud cover with wind (bottom right). Paired quantities have
+separately labelled axes in mm/percent and percent/m/s; they do not share units.
+The horizon is 24 elapsed hours from the current forecast hour, including the
+next calendar day. All labels use Europe/Copenhagen, with CET/CEST on axis ticks
+when the window crosses a daylight-saving transition. Missing hours break lines;
+missing values are not replaced by calm/dry forecasts.
+
+The renderer reuses the already-fetched weather payload, so no weather API calls
+are added. A catch-up run reuses one image for both due slots. No-work invocations
+never render a chart. A rendering failure is logged and falls back to the text
+forecast so graphics cannot block routine delivery. Dry runs render but do not
+send or record acceptance. Temporary images are removed on success or failure.
+
+The 1800×1500 PNG is uploaded directly in the same multipart Pushover request as
+the text, with `image/png` content type. It is not published to Pages or sent as
+a second notification. Both rendering and transport enforce the documented
+[5 MiB attachment limit](https://pushover.net/api#attachments). The existing
+acceptance, retry, journal, and durable deduplication rules apply unchanged.
+
+To preview offline from the repository root (requires ggplot2 and jsonlite):
+
+```bash
+Rscript --vanilla -e 'source("R/weather.R"); source("R/notification-chart.R"); p <- jsonlite::fromJSON("tests/fixtures/weather.json", simplifyVector=FALSE); render_notification_chart(p, "/tmp/weather-preview.png", now=as_local_time(p$current$dt))'
+```
+
 ## Accepted state
 
 Schema 1 contains exactly `schema_version: 1` and a `deliveries` map, keyed by

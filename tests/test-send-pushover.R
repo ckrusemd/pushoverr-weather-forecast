@@ -21,6 +21,9 @@ local({
     calls$historical <- list()
     calls$render <- list()
     calls$send <- character()
+    calls$charts <- 0L
+    calls$attachments <- list()
+    calls$chart_paths <- character()
     list(
       calls = calls,
       fetch = function(config) { calls$fetch <- calls$fetch + 1L; correctness_payload() },
@@ -35,15 +38,23 @@ local({
         )))
         delivery_slot
       },
-      send = function(message, title) {
+      chart = function(payload, path, config, now) {
+        calls$charts <- calls$charts + 1L
+        calls$chart_paths <- c(calls$chart_paths, path)
+        writeBin(as.raw(c(137, 80, 78, 71, 13, 10, 26, 10)), path)
+        invisible(path)
+      },
+      send = function(message, title, attachment = NULL) {
         calls$send <- c(calls$send, message)
+        calls$attachments <- c(calls$attachments, list(attachment))
+        if (!is.null(attachment)) correctness_assert(file.exists(attachment), "Image exists during send")
         list(accepted = TRUE, request_id = paste0("request-", message), attempts = 1L)
       }
     )
   }
   run <- function(args, now = baseline_now, h = harness(), ...) {
     run_notifications(args, now = now, fetch = h$fetch, historical = h$historical,
-                      send = h$send, render = h$render, clock = function() now, ...)
+                      send = h$send, render = h$render, clock = function() now, chart = h$chart, ...)
   }
 
   # Before the morning boundary, no secrets, network or state files are needed.
@@ -55,6 +66,7 @@ local({
     correctness_equal(h$calls$fetch, 0L, paste(mode, "no weather request"))
     correctness_equal(length(h$calls$historical), 0L, paste(mode, "no history request"))
     correctness_equal(length(h$calls$send), 0L, paste(mode, "no sends"))
+    correctness_equal(h$calls$charts, 0L, paste(mode, "no chart rendering before morning"))
     correctness_assert(!file.exists(args$state), paste(mode, "no state write"))
   }
   for (date in c("2026-03-29", "2026-10-25")) {
@@ -72,6 +84,7 @@ local({
   result <- run(args_for(legacy_path), h = h)
   correctness_equal(result$slots, character(), "Legacy accepted slots deduplicated")
   correctness_equal(h$calls$fetch, 0L, "Completed legacy state skips HTTP without secrets")
+  correctness_equal(h$calls$charts, 0L, "Completed state skips chart rendering")
   correctness_equal(readBin(legacy_path, "raw", n = file.info(legacy_path)$size), original,
                     "No-work legacy state is unchanged")
   scheduled_path <- tempfile()
@@ -106,6 +119,8 @@ local({
   correctness_equal(h$calls$fetch, 1L, "Dry-run fetches weather once")
   correctness_equal(length(h$calls$historical), 1L, "Dry-run morning history once")
   correctness_equal(length(h$calls$send), 0L, "Dry-run never sends")
+  correctness_equal(h$calls$charts, 1L, "Dry-run renders one chart without sending")
+  correctness_assert(!any(file.exists(h$calls$chart_paths)), "Dry-run removes temporary image")
   correctness_equal(readBin(dry_path, "raw", n = file.info(dry_path)$size), original,
                     "Dry-run preserves state bytes")
   args <- args_for(mode = "dry-run")
@@ -122,6 +137,8 @@ local({
     result <- run(args_for(path, mode, "afternoon"), h = h)
     correctness_equal(result$slots, "afternoon", paste(mode, "afternoon-only slots"))
     correctness_equal(h$calls$fetch, 1L, paste(mode, "forecast once"))
+    correctness_equal(h$calls$charts, 1L, paste(mode, "chart once"))
+    correctness_assert(!any(file.exists(h$calls$chart_paths)), "Temporary image removed after send")
     correctness_equal(length(h$calls$historical), 0L, paste(mode, "zero historical requests"))
     correctness_assert(is.na(h$calls$render[[1]]$precipitation), "Afternoon history stays unavailable")
     correctness_equal(h$calls$render[[1]]$now, now, "Renderer receives fixed clock")
@@ -161,7 +178,7 @@ local({
   for (failed_slot in c("morning", "afternoon")) {
     path <- tempfile()
     h <- harness()
-    h$send <- function(message, title) {
+    h$send <- function(message, title, attachment = NULL) {
       h$calls$send <- c(h$calls$send, message)
       if (message == failed_slot) stop("offline rejection", call. = FALSE)
       list(accepted = TRUE, request_id = paste0("accepted-", message), attempts = 2L)
@@ -201,6 +218,28 @@ local({
   correctness_error(run(args_for(path), h = h), "morning: offline render failure")
   correctness_assert(notification_was_accepted(read_notification_state(path), "2026-09-22", "afternoon"),
                      "Afternoon survives morning render failure")
+
+  # Reconciliation reuses a single image for both due slots, and removes it.
+  h <- harness()
+  run(args_for(), h = h)
+  correctness_equal(h$calls$charts, 1L, "Both due slots share one chart")
+  correctness_equal(h$calls$attachments[[1]], h$calls$attachments[[2]], "Both messages attach the same chart")
+  correctness_assert(!any(file.exists(h$calls$chart_paths)), "Shared chart cleaned up")
+
+  # A broken renderer cannot block the text forecast or change idempotency.
+  h <- harness()
+  h$chart <- function(...) stop("offline chart unavailable", call. = FALSE)
+  path <- tempfile()
+  chart_warning <- NULL
+  withCallingHandlers(run(args_for(path), h = h), warning = function(w) {
+    chart_warning <<- conditionMessage(w)
+    invokeRestart("muffleWarning")
+  })
+  correctness_contains(chart_warning, "sending text only")
+  correctness_equal(h$calls$send, c("morning", "afternoon"), "Text fallback still sends both slots")
+  correctness_assert(all(vapply(h$calls$attachments, is.null, logical(1))), "Fallback attaches no invalid image")
+  correctness_assert(notification_was_accepted(read_notification_state(path), "2026-09-22", "morning"),
+                     "Text fallback records accepted slot normally")
 
   # History failure remains nonfatal, and force never creates state.
   h <- harness()

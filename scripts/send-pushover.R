@@ -4,6 +4,7 @@ user_libraries <- strsplit(user_library, .Platform$path.sep, fixed = TRUE)[[1]]
 
 source("R/weather.R")
 source("R/notification.R")
+source("R/notification-chart.R")
 
 parse_arguments <- function(args) {
   result <- list(
@@ -28,7 +29,7 @@ run_notifications <- function(args = parse_arguments(commandArgs(trailingOnly = 
                               now = Sys.time(), config = weather_config,
                               fetch = fetch_weather, historical = fetch_historical_precipitation,
                               send = send_pushover_message, render = notification_text,
-                              clock = Sys.time) {
+                              clock = Sys.time, chart = render_notification_chart) {
   state <- read_notification_state(args$state)
   date <- notification_local_date(now, config$timezone)
   slots <- switch(args$mode,
@@ -69,6 +70,18 @@ run_notifications <- function(args = parse_arguments(commandArgs(trailingOnly = 
   }
   results <- character()
   failures <- character()
+  chart_path <- tempfile(pattern = "weather-forecast-", fileext = ".png")
+  on.exit(unlink(chart_path), add = TRUE)
+  attachment <- tryCatch({
+    chart(payload, chart_path, config = config, now = now)
+    if (!file.exists(chart_path) || file.info(chart_path)$size <= 0 || file.info(chart_path)$size > 5 * 1024^2)
+      stop("Chart renderer did not produce a valid-sized image.", call. = FALSE)
+    chart_path
+  }, error = function(e) {
+    warning(sprintf("Forecast chart unavailable; sending text only: %s", conditionMessage(e)), call. = FALSE)
+    append_summary(c("", "Forecast chart unavailable; continuing with the text forecast."))
+    NULL
+  })
 
   for (slot in slots) {
     title <- if (slot == "morning") "Morning weather forecast" else "Afternoon weather update"
@@ -81,7 +94,8 @@ run_notifications <- function(args = parse_arguments(commandArgs(trailingOnly = 
         message(sprintf("[%s]\n%s", title, forecast_message))
         NULL
       } else {
-        send(forecast_message, title)
+        if (is.null(attachment)) send(forecast_message, title)
+        else send(forecast_message, title, attachment = attachment)
       }
     }, error = function(e) e)
     if (inherits(result, "error")) {
