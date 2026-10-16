@@ -170,9 +170,18 @@ parse_pushover_acceptance <- function(response) {
 
 send_pushover_message <- function(message, title, app_key = Sys.getenv("PUSHOVER_APPKEY"),
                                   user_key = Sys.getenv("PUSHOVER_USERKEY"), attempts = 4L,
-                                  post = httr::POST, sleep = Sys.sleep) {
+                                  post = httr::POST, sleep = Sys.sleep, attachment = NULL) {
   if (!nzchar(trimws(app_key)) || !nzchar(trimws(user_key))) {
     stop("Pushover credentials are not configured.", call. = FALSE)
+  }
+  body <- list(token = app_key, user = user_key, title = title, message = message)
+  if (!is.null(attachment)) {
+    if (length(attachment) != 1L || !is.character(attachment) || is.na(attachment) ||
+        !file.exists(attachment) || isTRUE(file.info(attachment)$isdir) ||
+        file.access(attachment, 4L) != 0L || file.info(attachment)$size <= 0 ||
+        file.info(attachment)$size > 5 * 1024^2)
+      stop("Pushover attachment must be a readable image no larger than 5 MiB.", call. = FALSE)
+    body$attachment <- httr::upload_file(attachment, type = "image/png")
   }
   last_result <- NULL
   last_error <- NULL
@@ -180,8 +189,8 @@ send_pushover_message <- function(message, title, app_key = Sys.getenv("PUSHOVER
     response <- tryCatch(
       post(
         "https://api.pushover.net/1/messages.json",
-        body = list(token = app_key, user = user_key, title = title, message = message),
-        encode = "form", httr::timeout(20)
+        body = body,
+        encode = if (is.null(attachment)) "form" else "multipart", httr::timeout(20)
       ),
       error = function(e) {
         last_error <<- conditionMessage(e)
