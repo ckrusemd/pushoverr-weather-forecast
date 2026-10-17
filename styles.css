@@ -7,3 +7,10 @@ body { background: #090d16; color: var(--ink); }
 .metric h2 { font-size: .85rem; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
 @media (max-width: 800px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 460px) { .grid { grid-template-columns: 1fr; } .hero { padding: 1.5rem; } }
+.chart-scroll, .table-scroll { max-width: 100%; overflow-x: auto; margin: 1rem 0; }
+.chart-scroll img { min-width: 520px; }
+.heatmap-scroll img { min-width: 720px; }
+.table-scroll table { min-width: 680px; }
+.table-scroll th, .table-scroll td { white-space: nowrap; }
+.metric { overflow-wrap: anywhere; }
+.metric p:last-child { font-size: .9rem; }

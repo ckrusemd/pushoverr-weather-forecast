@@ -6,43 +6,89 @@ title: "Forecast analysis"
 source("R/weather.R")
 source("R/dashboard.R")
 snapshot <- read_dashboard_snapshot()
-hourly <- hourly_frame(snapshot$payload, snapshot$timezone)
+now <- dashboard_now(snapshot)
+hourly <- dashboard_hourly(hourly_frame(snapshot$payload, snapshot$timezone), now)
 daily <- dashboard_daily(snapshot)
 hourly$score <- outdoor_score(hourly)
 ```
 
+`r dashboard_freshness(snapshot)`
+
+Scroll charts and tables horizontally on smaller screens.
+
 ## Outdoor conditions
 
-The score favours temperatures around 20°C, lower rain risk and lighter winds. It is an aid to planning, not a weather warning.
+The score favours temperatures around 20°C, lower rain risk and lighter winds. It is an aid to planning, not a weather warning. This chart covers remaining forecast hours in the next 48 hours.
 
+::: {.chart-scroll tabindex="0" role="region" aria-label="Scrollable forecast chart"}
 ```{r}
+#| results: asis
+#| fig-alt: "Outdoor scores over the next 48 forecast hours, in Copenhagen local time."
 library(ggplot2)
-ggplot(head(hourly, 48), aes(time, score)) +
-  geom_area(fill = "#22d3ee", alpha = .28) + geom_line(colour = "#67e8f9", linewidth = 1) +
-  ylim(0, 100) + labs(x = NULL, y = "Outdoor score") + theme_minimal(base_size = 12)
+if (!nrow(hourly) || !any(is.finite(hourly$score))) {
+  cat("Outdoor scores are unavailable for the next 48 hours.\n")
+} else {
+  print(ggplot(hourly, aes(time, score)) +
+    geom_area(fill = "#22d3ee", alpha = .28) + geom_line(colour = "#67e8f9", linewidth = 1) +
+    scale_x_datetime(date_labels = "%a\n%H:%M", date_breaks = "12 hours", timezone = snapshot$timezone) +
+    ylim(0, 100) + labs(x = "Copenhagen time", y = "Outdoor score") + dashboard_chart_theme())
+}
 ```
+:::
 
 ## Seven-day outlook
 
-```{r}
-knitr::kable(transform(daily, sunrise = format(sunrise, "%H:%M"), sunset = format(sunset, "%H:%M")), digits = 1,
-  col.names = c("Date", "Sunrise", "Sunset", "Low °C", "High °C", "Rain %", "Wind m/s", "Conditions"))
-```
-
-## Hourly weather heatmap
-
+::: {.table-scroll tabindex="0" role="region" aria-label="Scrollable daily forecast table"}
 ```{r}
 #| results: asis
-heat_long <- dashboard_heatmap_data(hourly, dashboard_now(snapshot), snapshot$timezone)
-if (!nrow(heat_long)) {
-  cat("No hourly forecast is available for today between 07:00 and 22:00 (Europe/Copenhagen).\n")
+if (!nrow(daily)) {
+  cat("No daily forecast is available from today.\n")
 } else {
-  print(ggplot(heat_long, aes(hour_label, variable, fill = value)) +
-    geom_tile(colour = "#0b1220", linewidth = .4) +
-    facet_grid(variable ~ ., scales = "free_y", space = "free_y") +
-    scale_fill_gradient(low = "#102a43", high = "#67e8f9", na.value = "#263449") +
-    labs(x = "Local time", y = NULL, fill = "Value") +
-    theme_minimal(base_size = 11) +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1), strip.text.y = element_blank(), panel.spacing.y = grid::unit(.25, "lines")))
+  display <- daily
+  display$sunrise <- format(daily$sunrise, "%H:%M", tz = snapshot$timezone)
+  display$sunset <- format(daily$sunset, "%H:%M", tz = snapshot$timezone)
+  for (column in c("min_temp", "max_temp", "pop", "wind_speed")) {
+    display[[column]] <- vapply(daily[[column]], dashboard_number, character(1), pattern = "%.1f")
+  }
+  print(knitr::kable(display,
+    col.names = c("Date", "Sunrise", "Sunset", "Low °C", "High °C", "Rain %", "Wind m/s", "Conditions")))
 }
 ```
+:::
+
+## Remaining hourly weather today
+
+Each tile shows its value. Colour compares values within each row; rows use different units.
+
+::: {.chart-scroll .heatmap-scroll tabindex="0" role="region" aria-label="Scrollable hourly weather heatmap"}
+```{r}
+#| results: asis
+#| fig-height: 4.5
+#| fig-alt: "Remaining daytime hourly weather today. Tile labels show values and units; colour compares values within each row."
+heat_long <- dashboard_heatmap_data(hourly, now, snapshot$timezone)
+if (!nrow(heat_long)) {
+  cat("No remaining hourly forecast is available for today between 07:00 and 22:00 (Europe/Copenhagen).\n")
+} else {
+  heat_long$relative <- ave(heat_long$value, heat_long$variable, FUN = function(values) {
+    valid <- is.finite(values)
+    result <- rep(NA_real_, length(values))
+    if (any(valid)) {
+      span <- range(values[valid])
+      result[valid] <- if (diff(span) == 0) .5 else (values[valid] - span[1]) / diff(span)
+    }
+    result
+  })
+  heat_long$label <- vapply(heat_long$value, dashboard_number, character(1), pattern = "%.1f")
+  heat_long$label[!is.finite(heat_long$value)] <- "—"
+  print(ggplot(heat_long, aes(hour_label, variable, fill = relative)) +
+    geom_tile(colour = "#0b1220", linewidth = .4) +
+    geom_text(aes(label = label, colour = relative >= .5), size = 3) +
+    scale_colour_manual(values = c("FALSE" = "#e6edf8", "TRUE" = "#090d16"), na.value = "#e6edf8", guide = "none") +
+    scale_fill_gradient(low = "#102a43", high = "#67e8f9", limits = c(0, 1),
+                        breaks = c(0, 1), labels = c("Lower", "Higher"), na.value = "#263449") +
+    labs(x = "Copenhagen time", y = NULL, fill = "Within each row") +
+    dashboard_chart_theme() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)))
+}
+```
+:::

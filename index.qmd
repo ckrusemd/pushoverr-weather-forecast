@@ -8,54 +8,69 @@ source("R/dashboard.R")
 snapshot <- read_dashboard_snapshot()
 payload <- snapshot$payload
 current <- payload$current
-daily <- dashboard_daily(snapshot)[1, ]
-hourly <- hourly_frame(payload, snapshot$timezone)
-best <- dashboard_best_hour(hourly, dashboard_now(snapshot), snapshot$timezone)
+now <- dashboard_now(snapshot)
+daily <- dashboard_today(snapshot)
+hourly <- dashboard_hourly(hourly_frame(payload, snapshot$timezone), now, hours = 24)
+best <- dashboard_best_hour(hourly, now, snapshot$timezone)
 ```
 
 ::: {.hero}
 # Copenhagen weather
 
-`r weather_description(current$weather)` · Updated `r format(as_local_time(current$dt), "%H:%M")`
+`r weather_description(current$weather)`
+
+`r dashboard_freshness(snapshot)`
 :::
+
+Forecast for `r format(now, "%Y-%m-%d", tz = snapshot$timezone)`. Times are local to Copenhagen. Scroll the chart horizontally on smaller screens.
 
 ::: {.grid}
 ::: {.metric}
-## Now
-`r sprintf("%.0f°C", current$temp)`
+## Latest observation
+`r dashboard_number(current$temp, "%.0f°C")`
 
-Feels like `r sprintf("%.0f°C", current$feels_like)`
+Feels like `r dashboard_number(current$feels_like, "%.0f°C")`
 :::
 ::: {.metric}
 ## Today
-`r sprintf("%.0f / %.0f°C", daily$max_temp, daily$min_temp)`
+`r if (nrow(daily)) sprintf("%s / %s", dashboard_number(daily$max_temp, "%.0f°C"), dashboard_number(daily$min_temp, "%.0f°C")) else "Unavailable"`
 
 High / low
 :::
 ::: {.metric}
-## Rain chance
-`r sprintf("%.0f%%", daily$pop)`
+## Rain chance today
+`r dashboard_number(daily$pop, "%.0f%%")`
 
-Wind `r sprintf("%.0f m/s", daily$wind_speed)`
+Wind `r dashboard_number(daily$wind_speed, "%.0f m/s")`
 :::
 ::: {.metric}
-## Best outside
-`r if (nrow(best) && is.finite(best$score[1])) format(best$time[1], "%H:%M", tz = snapshot$timezone) else "Unavailable"`
+## Best outside today
+`r dashboard_clock(best$time, snapshot$timezone)`
 
-Score `r if (nrow(best) && is.finite(best$score[1])) sprintf("%.0f / 100", best$score[1]) else "Unavailable"`
+Score `r dashboard_number(best$score, "%.0f / 100")`
+
+Remaining forecast hours only
 :::
 :::
 
 ## The next 24 hours
 
+::: {.chart-scroll tabindex="0" role="region" aria-label="Scrollable forecast chart"}
 ```{r}
+#| results: asis
+#| fig-alt: "Temperature and rain probability over the next 24 forecast hours, in Copenhagen local time."
 library(ggplot2)
-ggplot(head(hourly, 24), aes(time, temp)) +
-  geom_line(linewidth = 1.1, colour = "#6ee7ff") +
-  geom_point(aes(colour = pop), size = 2.5) +
-  scale_colour_gradient(low = "#a7f3d0", high = "#60a5fa", name = "Rain chance %") +
-  labs(x = NULL, y = "Temperature °C") +
-  theme_minimal(base_size = 12)
+if (!nrow(hourly)) {
+  cat("No hourly forecast is available for the next 24 hours.\n")
+} else {
+  print(ggplot(hourly, aes(time, temp)) +
+    geom_line(linewidth = 1.1, colour = "#6ee7ff") +
+    geom_point(aes(colour = pop), size = 2.5) +
+    scale_colour_gradient(low = "#a7f3d0", high = "#60a5fa", limits = c(0, 100), name = "Rain chance %") +
+    scale_x_datetime(date_labels = "%a\n%H:%M", date_breaks = "6 hours", timezone = snapshot$timezone) +
+    labs(x = "Copenhagen time", y = "Temperature °C") + dashboard_chart_theme())
+}
 ```
+:::
 
-Sunrise `r format(daily$sunrise, "%H:%M")` · Sunset `r format(daily$sunset, "%H:%M")`
+Sunrise today `r dashboard_clock(daily$sunrise, snapshot$timezone)` · Sunset today `r dashboard_clock(daily$sunset, snapshot$timezone)`

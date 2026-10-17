@@ -5,12 +5,17 @@ project:
   pre-render: Rscript --vanilla scripts/prepare-dashboard.R
   resources:
     - "!.weather-build/**"
+    - "!.herdr-project/**"
     - "!tests/**"
     - "!R/**"
     - "!scripts/**"
     - "!.env*"
     - "!.Renviron"
     - "!Renviron.site"
+    - "!**/*.pem"
+    - "!**/*.key"
+    - "!**/credentials*.json"
+    - "!**/secrets*.json"
   render:
     - index.qmd
     - forecast.qmd
@@ -33,6 +38,7 @@ website:
 format:
   html:
     theme: darkly
+    fig-format: svg
     css: styles.css
     toc: true
     smooth-scroll: true
