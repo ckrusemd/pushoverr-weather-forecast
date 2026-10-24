@@ -53,9 +53,12 @@ library(ggplot2)
 ggplot(head(hourly, 24), aes(time, temp)) +
   geom_line(linewidth = 1.1, colour = "#6ee7ff") +
   geom_point(aes(colour = pop), size = 2.5) +
+  scale_x_datetime(timezone = snapshot$timezone, date_breaks = "4 hours",
+    date_minor_breaks = "1 hour", date_labels = "%d %b\n%H:%M %Z") +
   scale_colour_gradient(low = "#a7f3d0", high = "#60a5fa", name = "Rain chance %") +
   labs(x = NULL, y = "Temperature °C") +
-  theme_minimal(base_size = 12)
+  theme_minimal(base_size = 12) +
+  theme(panel.grid.minor.x = element_line(colour = "#cbd5e1", linewidth = .4))
 ```
 
 Sunrise `r format(daily$sunrise, "%H:%M")` · Sunset `r format(daily$sunset, "%H:%M")`

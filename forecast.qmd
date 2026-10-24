@@ -19,7 +19,11 @@ The score favours temperatures around 20°C, lower rain risk and lighter winds. 
 library(ggplot2)
 ggplot(head(hourly, 48), aes(time, score)) +
   geom_area(fill = "#22d3ee", alpha = .28) + geom_line(colour = "#67e8f9", linewidth = 1) +
-  ylim(0, 100) + labs(x = NULL, y = "Outdoor score") + theme_minimal(base_size = 12)
+  geom_point(colour = "#67e8f9", size = 1.8) +
+  scale_x_datetime(timezone = snapshot$timezone, date_breaks = "6 hours",
+    date_minor_breaks = "1 hour", date_labels = "%d %b\n%H:%M %Z") +
+  ylim(0, 100) + labs(x = NULL, y = "Outdoor score") + theme_minimal(base_size = 12) +
+  theme(panel.grid.minor.x = element_line(colour = "#cbd5e1", linewidth = .4))
 ```
 
 ## Seven-day outlook

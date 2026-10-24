@@ -47,7 +47,11 @@ local({
 
   plots <- notification_chart_plots(data)
   correctness_equal(names(plots), c("temperature", "uv", "rain", "clouds_wind"), "Requested grid panel order")
-  for (plot in plots) invisible(ggplot2::ggplot_build(plot))
+  for (plot in plots) {
+    axis <- ggplot2::ggplot_build(plot)$layout$panel_params[[1]]$x
+    correctness_equal(length(axis$get_breaks()), 24L, "Every forecast hour has an axis mark")
+    correctness_equal(sum(nzchar(axis$get_labels())), 6L, "Labels remain readable at four-hour intervals")
+  }
   for (name in c("rain", "clouds_wind")) {
     y <- plots[[name]]$scales$get_scales("y")
     correctness_assert(all(is.finite(y$secondary.axis$trans(c(0, 1)))), "Dry/calm secondary axes finite")

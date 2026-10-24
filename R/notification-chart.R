@@ -30,17 +30,26 @@ notification_chart_plots <- function(data) {
   uv_max <- max(3, ceiling(positive_max(hourly$uv_index, 0) * 1.1))
   crosses_dst <- format(data$start, "%z", tz = data$timezone) != format(data$end, "%z", tz = data$timezone)
   time_labels <- if (crosses_dst) "%d %b\n%H:%M %Z" else "%d %b\n%H:%M"
+  hour_breaks <- seq(data$start, data$end - 3600, by = 3600)
+  # Mark every forecast hour, but space labels out for the phone-sized panels.
+  label_hours <- function(times) {
+    labels <- format(times, time_labels, tz = data$timezone)
+    labels[!as.numeric(times) %in% as.numeric(hour_breaks[seq(1, 24, by = 4)])] <- ""
+    labels
+  }
   base <- ggplot2::ggplot(hourly, ggplot2::aes(x = time)) +
     ggplot2::scale_x_datetime(
       timezone = data$timezone, limits = c(data$start - 1800, data$end - 1800),
-      breaks = seq(data$start, data$end - 3600, by = 4 * 3600), date_labels = time_labels,
+      breaks = hour_breaks, labels = label_hours, minor_breaks = NULL,
       expand = ggplot2::expansion(mult = 0)
     ) +
     ggplot2::labs(x = NULL) +
     ggplot2::theme_minimal(base_size = 12, base_family = "sans") +
     ggplot2::theme(
       panel.grid.minor = ggplot2::element_blank(),
-      panel.grid.major.x = ggplot2::element_line(colour = "#edf0f4"),
+      panel.grid.major.x = ggplot2::element_line(colour = "#cbd5e1", linewidth = 0.4),
+      axis.ticks.x = ggplot2::element_line(colour = "#64748b", linewidth = 0.4),
+      axis.ticks.length = grid::unit(3, "pt"),
       panel.grid.major.y = ggplot2::element_line(colour = "#e2e8f0"),
       plot.title = ggplot2::element_text(face = "bold", size = 15, colour = "#172337"),
       axis.text = ggplot2::element_text(colour = "#41516b", size = 10),
@@ -69,6 +78,8 @@ notification_chart_plots <- function(data) {
     ggplot2::geom_col(ggplot2::aes(y = rain_mm, fill = "Rain (mm)"), width = 2700, na.rm = TRUE) +
     ggplot2::geom_line(ggplot2::aes(y = pop * rain_max / 100, colour = "PoP (%)"),
                        linewidth = 1.15, na.rm = TRUE) +
+    ggplot2::geom_point(ggplot2::aes(y = pop * rain_max / 100, colour = "PoP (%)"),
+                        size = 1.8, na.rm = TRUE) +
     ggplot2::scale_fill_manual(values = c("Rain (mm)" = "#559bce")) +
     ggplot2::scale_colour_manual(values = c("PoP (%)" = "#9a438a")) +
     ggplot2::scale_y_continuous(
@@ -79,6 +90,8 @@ notification_chart_plots <- function(data) {
     ggplot2::geom_area(ggplot2::aes(y = clouds, fill = "Clouds (%)"), stat = "identity", alpha = 0.55, na.rm = TRUE) +
     ggplot2::geom_line(ggplot2::aes(y = wind_speed * 100 / wind_max, colour = "Wind (m/s)"),
                        linewidth = 1.15, na.rm = TRUE) +
+    ggplot2::geom_point(ggplot2::aes(y = wind_speed * 100 / wind_max, colour = "Wind (m/s)"),
+                        size = 1.8, na.rm = TRUE) +
     ggplot2::scale_fill_manual(values = c("Clouds (%)" = "#a6b1c0")) +
     ggplot2::scale_colour_manual(values = c("Wind (m/s)" = "#11867a")) +
     ggplot2::scale_y_continuous(
