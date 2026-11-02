@@ -366,6 +366,11 @@
         "accepted_at": "2026-11-02T04:02:03Z",
         "request_id": "ade21ff1-7b58-44ed-8ec4-146d115671cd",
         "run_id": "41386087565"
+      },
+      "afternoon": {
+        "accepted_at": "2026-11-02T14:02:25Z",
+        "request_id": "f2e63468-efe3-4217-af48-bec2493e86ab",
+        "run_id": "41457969734"
       }
     }
   }
