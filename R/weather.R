@@ -11,19 +11,111 @@ require_weather_key <- function() {
   key
 }
 
-fetch_weather <- function(config = weather_config, api_key = require_weather_key()) {
-  response <- httr::RETRY("GET",
-    "https://api.openweathermap.org/data/3.0/onecall",
-    query = list(lat = config$lat, lon = config$lon, appid = api_key, units = "metric"),
-    times = 4, pause_base = 1, terminate_on = c(400, 401, 403, 404), httr::timeout(20)
-  )
-  if (httr::status_code(response) != 200) {
-    stop(sprintf("OpenWeather request failed (%s).", httr::status_code(response)), call. = FALSE)
+openweather_json <- function(path, query, label, timeout_seconds,
+                             get = httr::GET, sleep = Sys.sleep) {
+  # Four total attempts; transport errors, 408, 429 and 5xx may recover.
+  # Never echo transport messages, URLs or response bodies: they can contain keys.
+  for (attempt in seq_len(4L)) {
+    response <- tryCatch(get(paste0("https://api.openweathermap.org/data/3.0/", path),
+                             query = query, httr::timeout(timeout_seconds)), error = identity)
+    if (inherits(response, "error")) {
+      reason <- if (inherits(response, "curl_error_operation_timedout")) "timed out" else "transport error"
+      failure <- sprintf("%s request failed (%s; attempt %d of 4).", label, reason, attempt)
+    } else {
+      status <- httr::status_code(response)
+      if (status == 200L) {
+        return(tryCatch(
+          jsonlite::fromJSON(httr::content(response, as = "text", encoding = "UTF-8"),
+                             simplifyVector = FALSE),
+          error = function(e) stop(sprintf("%s response contains invalid JSON.", label), call. = FALSE)
+        ))
+      }
+      failure <- sprintf("%s request failed (HTTP %d; attempt %d of 4).", label, status, attempt)
+      transient <- status %in% c(408L, 429L) || (status >= 500L && status <= 599L)
+      if (!transient) stop(failure, call. = FALSE)
+    }
+    if (attempt == 4L) stop(failure, call. = FALSE)
+    delay <- 2^(attempt - 1L)
+    if (!inherits(response, "error")) {
+      retry_after <- httr::headers(response)[["retry-after"]]
+      if (!is.null(retry_after)) {
+        seconds <- suppressWarnings(as.numeric(retry_after))
+        if (!is.finite(seconds)) {
+          seconds <- as.numeric(httr::parse_http_date(retry_after)) - as.numeric(Sys.time())
+        }
+        if (length(seconds) == 1L && is.finite(seconds) && seconds >= 0) {
+          # Do not retry earlier than requested or let the provider impose an unbounded wait.
+          if (seconds > 30) stop(sprintf("%s Retry-After exceeds the 30-second retry limit.", label), call. = FALSE)
+          delay <- max(delay, seconds)
+        }
+      }
+    }
+    sleep(delay)
   }
-  payload <- jsonlite::fromJSON(httr::content(response, as = "text", encoding = "UTF-8"), simplifyVector = FALSE)
-  required <- c("current", "hourly", "daily")
-  missing <- setdiff(required, names(payload))
+}
+
+weather_object <- function(value) {
+  is.list(value) && !is.null(names(value)) && !anyDuplicated(names(value)) && all(nzchar(names(value)))
+}
+
+weather_array <- function(value) is.list(value) && is.null(names(value))
+
+validate_forecast_response <- function(payload) {
+  fail <- function(field) stop(sprintf("Invalid OpenWeather forecast field: %s.", field), call. = FALSE)
+  number <- function(value, field) {
+    if (!is.null(value) && (!is.numeric(value) || length(value) != 1L || !is.finite(value))) fail(field)
+  }
+  fields <- function(row, required, prefix) {
+    if (!weather_object(row)) fail(prefix)
+    for (field in required) number(row[[field]], paste(prefix, field, sep = "."))
+    if (!is.null(row$weather)) {
+      if (!weather_array(row$weather)) fail(paste0(prefix, ".weather"))
+      for (entry in row$weather) {
+        if (!weather_object(entry)) fail(paste0(prefix, ".weather"))
+        description <- entry$description
+        if (!is.null(description) && (!is.character(description) ||
+            length(description) != 1L || is.na(description))) fail(paste0(prefix, ".weather.description"))
+      }
+    }
+  }
+  if (!weather_object(payload)) fail("payload")
+  missing <- setdiff(c("current", "hourly", "daily"), names(payload))
   if (length(missing)) stop(sprintf("OpenWeather response is missing: %s", paste(missing, collapse = ", ")), call. = FALSE)
+  # Missing individual values remain available to the notification's fallback formatting.
+  # Dashboard preparation applies its own stricter requirements before rendering.
+  fields(payload$current, c("dt", "temp", "feels_like"), "current")
+  for (section in c("hourly", "daily")) {
+    if (!weather_array(payload[[section]])) fail(section)
+    for (i in seq_along(payload[[section]])) {
+      row <- payload[[section]][[i]]
+      prefix <- sprintf("%s[%d]", section, i)
+      if (section == "hourly") {
+        fields(row, c("dt", "temp", "feels_like", "pop", "uvi", "wind_speed", "clouds", "humidity"), prefix)
+        if ("rain" %in% names(row)) {
+          if (!weather_object(row$rain)) fail(paste0(prefix, ".rain"))
+          if (is.null(row$rain$`1h`)) fail(paste0(prefix, ".rain.1h"))
+          number(row$rain$`1h`, paste0(prefix, ".rain.1h"))
+          if (row$rain$`1h` < 0) fail(paste0(prefix, ".rain.1h"))
+        }
+      } else {
+        fields(row, c("dt", "sunrise", "sunset", "pop", "wind_speed"), prefix)
+        if (!is.null(row$temp)) {
+          if (!weather_object(row$temp)) fail(paste0(prefix, ".temp"))
+          for (field in c("min", "max")) number(row$temp[[field]], paste(prefix, "temp", field, sep = "."))
+        }
+      }
+    }
+  }
+  invisible(payload)
+}
+
+fetch_weather <- function(config = weather_config, api_key = require_weather_key(),
+                          get = httr::GET, sleep = Sys.sleep) {
+  force(api_key)
+  payload <- openweather_json("onecall",
+    list(lat = config$lat, lon = config$lon, appid = api_key, units = "metric"),
+    "OpenWeather forecast", 20, get = get, sleep = sleep)
+  validate_forecast_response(payload)
   payload
 }
 
@@ -124,18 +216,31 @@ sunrise_sunset_change <- function(config = weather_config, now = Sys.time(),
 }
 
 fetch_historical_precipitation <- function(date, config = weather_config,
-                                            api_key = require_weather_key()) {
+                                            api_key = require_weather_key(),
+                                            get = httr::GET, sleep = Sys.sleep) {
+  force(api_key)
   timestamp <- as.numeric(as.POSIXct(as.Date(date), tz = "UTC"))
-  response <- httr::RETRY("GET", "https://api.openweathermap.org/data/3.0/onecall/timemachine",
-                          query = list(lat = config$lat, lon = config$lon, dt = timestamp,
-                                       appid = api_key, units = "metric"),
-                          times = 3, pause_base = 1, httr::timeout(30))
-  httr::stop_for_status(response)
-  payload <- jsonlite::fromJSON(httr::content(response, as = "text", encoding = "UTF-8"), simplifyVector = FALSE)
-  if (!is.list(payload$data)) return(NA_real_)
-  sum(vapply(payload$data, function(x) {
-    if (is.null(x$rain)) 0 else as.numeric(x$rain$`1h` %||% 0)
-  }, numeric(1)), na.rm = TRUE)
+  payload <- openweather_json("onecall/timemachine",
+    list(lat = config$lat, lon = config$lon, dt = timestamp, appid = api_key, units = "metric"),
+    "OpenWeather historical precipitation", 30, get = get, sleep = sleep)
+  fail <- function(field) stop(sprintf("Invalid OpenWeather historical precipitation field: %s.", field), call. = FALSE)
+  if (!weather_object(payload)) fail("payload")
+  if (is.null(payload$data)) return(NA_real_)
+  if (!weather_array(payload$data)) fail("data")
+  if (!length(payload$data)) return(NA_real_)
+  total <- sum(vapply(seq_along(payload$data), function(i) {
+    row <- payload$data[[i]]
+    prefix <- sprintf("data[%d]", i)
+    if (!weather_object(row)) fail(prefix)
+    if (!is.numeric(row$dt) || length(row$dt) != 1L || !is.finite(row$dt)) fail(paste0(prefix, ".dt"))
+    if (!"rain" %in% names(row)) return(0)
+    if (!weather_object(row$rain)) fail(paste0(prefix, ".rain"))
+    rain <- row$rain$`1h`
+    if (!is.numeric(rain) || length(rain) != 1L || !is.finite(rain) || rain < 0) fail(paste0(prefix, ".rain.1h"))
+    rain
+  }, numeric(1)))
+  if (!is.finite(total)) fail("data total")
+  total
 }
 
 best_outdoor_hour <- function(hourly, now = Sys.time(), config = weather_config) {
