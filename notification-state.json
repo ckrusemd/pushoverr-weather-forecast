@@ -1,18 +1,6 @@
 {
   "schema_version": 1,
   "deliveries": {
-    "2026-10-25": {
-      "morning": {
-        "accepted_at": "2026-10-25T04:02:06Z",
-        "request_id": "e6197320-c611-46ae-9dda-0643acb90a69",
-        "run_id": "40160318228"
-      },
-      "afternoon": {
-        "accepted_at": "2026-10-25T14:02:02Z",
-        "request_id": "1eb9565f-8782-4705-8866-5d74a233097f",
-        "run_id": "40200237365"
-      }
-    },
     "2026-10-26": {
       "morning": {
         "accepted_at": "2026-10-26T04:02:06Z",
@@ -371,6 +359,13 @@
         "accepted_at": "2026-11-24T14:02:09Z",
         "request_id": "befba07b-1061-428d-ab55-8f152b30f3ce",
         "run_id": "45409381343"
+      }
+    },
+    "2026-11-25": {
+      "morning": {
+        "accepted_at": "2026-11-25T04:02:16Z",
+        "request_id": "2107b284-bc6b-4e7a-862f-d8ee4eb48c18",
+        "run_id": "45543837720"
       }
     }
   }
